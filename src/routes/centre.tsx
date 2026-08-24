@@ -83,7 +83,7 @@ function CentrePage() {
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
   // Active centre: User assigned centre, or selected centre, or first centre
-  const activeCentre: ProcurementCentre = useMemo(() => {
+  const activeCentre: ProcurementCentre | null = useMemo(() => {
     if (selectedCentreId) {
       const found = centres.find((c) => c.id === selectedCentreId);
       if (found) return found;
@@ -92,26 +92,7 @@ function CentrePage() {
       const assigned = centres.find((c) => c.id === user.centreId);
       if (assigned) return assigned;
     }
-    return (
-      centres[0] || {
-        id: "centre-a",
-        code: "A",
-        name: "Mandi Centre A — Karnal City",
-        nameHi: "मंडी केंद्र A — करनाल शहर",
-        distanceKm: 7,
-        queueLength: 1,
-        predictedWaitMin: 10,
-        capacityUsedPct: 34,
-        dailyCapacityQuintals: 5000,
-        procuredTodayQuintals: 1700,
-        activeCounters: 4,
-        totalCounters: 6,
-        processingRatePerHour: 18,
-        farmersToday: 142,
-        map: { x: 42, y: 55 },
-        recommended: true,
-      }
-    );
+    return centres[0] || null;
   }, [centres, selectedCentreId, user?.centreId]);
 
   // Filter queue rows for active centre
@@ -141,12 +122,12 @@ function CentrePage() {
 
   // Active queue vs completed for this centre
   const activeInQueue = useMemo(
-    () => queueRows.filter((r) => (!r.centreId || r.centreId === activeCentre.id) && r.status !== "done" && r.status !== "rejected"),
-    [queueRows, activeCentre.id]
+    () => activeCentre ? queueRows.filter((r) => r.centreId === activeCentre.id && r.status !== "done" && r.status !== "rejected") : [],
+    [queueRows, activeCentre?.id]
   );
   const completedToday = useMemo(
-    () => queueRows.filter((r) => (!r.centreId || r.centreId === activeCentre.id) && (r.status === "done" || r.status === "accepted")),
-    [queueRows, activeCentre.id]
+    () => activeCentre ? queueRows.filter((r) => r.centreId === activeCentre.id && (r.status === "done" || r.status === "accepted")) : [],
+    [queueRows, activeCentre?.id]
   );
 
   // Counter management
@@ -280,6 +261,22 @@ function CentrePage() {
         </div>
       )}
 
+      {/* ── Empty State — No Centre Assigned ── */}
+      {!activeCentre ? (
+        <div className="mx-auto max-w-lg py-16 text-center">
+          <span className="text-5xl">🏢</span>
+          <h2 className="mt-4 font-display text-2xl font-extrabold text-navy">
+            {hi ? "कोई खरीद केंद्र असाइन नहीं है" : "No Procurement Centre Assigned"}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+            {hi
+              ? "आपके खाते को अभी तक किसी खरीद केंद्र से नहीं जोड़ा गया है। कृपया सुपर एडमिन से संपर्क करें।"
+              : "Your account has not been assigned to any procurement centre yet. Please contact the Super Admin to assign you to a centre."}
+          </p>
+        </div>
+      ) : (
+      <>
+
       {/* ── Header & Centre Profile ── */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
@@ -297,8 +294,8 @@ function CentrePage() {
           </h1>
           <p className="mt-1 text-xs font-semibold text-muted-foreground">
             {hi
-              ? `दैनिक खरीद लक्ष्य: ${activeCentre.dailyCapacityQuintals.toLocaleString("en-IN")} क्विंटल | जिला: करनाल, हरियाणा`
-              : `Daily Procurement Target: ${activeCentre.dailyCapacityQuintals.toLocaleString("en-IN")} quintals | District: Karnal, Haryana`}
+              ? `दैनिक खरीद लक्ष्य: ${activeCentre.dailyCapacityQuintals.toLocaleString("en-IN")} क्विंटल | जिला: ${user?.district || ""}`
+              : `Daily Procurement Target: ${activeCentre.dailyCapacityQuintals.toLocaleString("en-IN")} quintals | District: ${user?.district || ""}`}
           </p>
         </div>
 
@@ -535,7 +532,7 @@ function CentrePage() {
                           </td>
                           <td className="px-4 py-3.5">
                             <p className="font-bold text-navy">{row.farmerName}</p>
-                            <p className="text-xs text-muted-foreground">{row.village || "Karnal"}</p>
+                            <p className="text-xs text-muted-foreground">{row.village || ""}</p>
                           </td>
                           <td className="px-4 py-3.5 font-semibold text-navy">
                             {row.crop}
@@ -1006,6 +1003,8 @@ function CentrePage() {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </PageShell>
   );

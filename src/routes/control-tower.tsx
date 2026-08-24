@@ -5,6 +5,7 @@ import { AuthGuard } from "@/components/kisan/auth-guard";
 import { ForecastChart, ThroughputChart, WaitAnalyticsChart } from "@/components/kisan/charts";
 import { DistrictMap } from "@/components/kisan/district-map";
 import { Pill, PrototypeBadge, SectionLabel, StatCard } from "@/components/kisan/primitives";
+import { useAuth } from "@/hooks/use-auth";
 import { useKisan } from "@/lib/kisan/store";
 import type { ActivityEvent, AiRecommendation } from "@/lib/kisan/types";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,9 @@ function ControlTowerPage() {
     summary,
   } = useKisan();
   const hi = language === "hi";
+  const { user } = useAuth();
+  const userDistrict = user?.district || "";
+  const firstCentreName = centres[0]?.name || (hi ? "सभी केंद्र" : "All Centres");
 
   const recSt = recommendation ? recStatusConfig[recommendation.status] : recStatusConfig.pending;
   const activeCentres = centres.filter((c) => c.farmersToday > 0).length;
@@ -87,7 +91,7 @@ function ControlTowerPage() {
         <div>
           <SectionLabel tone="dark">{hi ? "जिला कमांड सेंटर" : "District Command Centre"}</SectionLabel>
           <h1 className="mt-1 font-display text-3xl font-extrabold text-command-fg sm:text-4xl">
-            {hi ? "कंट्रोल टावर — करनाल" : "Control Tower — Karnal"}
+            {hi ? `कंट्रोल टावर — ${userDistrict}` : `Control Tower — ${userDistrict}`}
           </h1>
         </div>
         <div className="flex items-center gap-2">
@@ -151,12 +155,12 @@ function ControlTowerPage() {
               {hi ? "लाइव सेंटर मैप" : "Live centre map"}
             </h2>
             <div className="mt-4">
-              <DistrictMap centres={centres} />
+              <DistrictMap centres={centres} district={userDistrict} />
             </div>
           </section>
 
           <section className="panel-command p-5">
-            <SectionLabel tone="dark">{hi ? "कतार पूर्वानुमान — केंद्र A" : "Queue forecast — Centre A"}</SectionLabel>
+            <SectionLabel tone="dark">{hi ? `कतार पूर्वानुमान — ${firstCentreName}` : `Queue forecast — ${firstCentreName}`}</SectionLabel>
             <h3 className="mt-2 font-display text-lg font-extrabold text-command-fg">
               {hi ? "वास्तविक बनाम अनुमानित" : "Actual vs predicted queue"}
             </h3>
@@ -262,7 +266,7 @@ function ControlTowerPage() {
                 <p className="mt-2 text-sm font-semibold text-command-fg">
                   {hi
                     ? "सभी केंद्र सामान्य परिचालन मापदंडों में हैं। कोई सक्रिय चेतावनी नहीं।"
-                    : "All 5 mandi centres operating within safe threshold capacity (sub-85%). Continuous ML monitoring active."}
+                    : `All ${centres.length} mandi centres operating within safe threshold capacity (sub-85%). Continuous ML monitoring active.`}
                 </p>
               </div>
             )}

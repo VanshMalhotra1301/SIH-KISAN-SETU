@@ -174,18 +174,32 @@ export function KisanProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshFromDatabase();
 
+    if (!user) return; // Don't subscribe if not logged in
+
+    let ticketFilter: string | undefined;
+    let paymentFilter: string | undefined;
+    let centreFilter: string | undefined;
+
+    if (user.role === "farmer" && user.id) {
+      ticketFilter = `farmer_id=eq.${user.id}`;
+      paymentFilter = `farmer_id=eq.${user.id}`;
+    } else if (user.role === "centre_operator" && user.centreId) {
+      ticketFilter = `centre_id=eq.${user.centreId}`;
+      centreFilter = `id=eq.${user.centreId}`;
+    }
+
     const channel = supabase
-      .channel("kisan-production-sync")
-      .on("postgres_changes", { event: "*", schema: "public", table: "procurement_centres" }, () => {
+      .channel(`kisan-production-sync-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "procurement_centres", filter: centreFilter }, () => {
         refreshFromDatabase();
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "queue_tickets" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "queue_tickets", filter: ticketFilter }, () => {
         refreshFromDatabase();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "procurement_timeline" }, () => {
         refreshFromDatabase();
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: paymentFilter }, () => {
         refreshFromDatabase();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "slots" }, () => {
@@ -199,7 +213,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           .then((activity) => setState((s) => ({ ...s, activity })))
           .catch(() => {});
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "centre_alerts" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "centre_alerts", filter: centreFilter ? `centre_id=eq.${user.centreId}` : undefined }, () => {
         analyticsService.alerts()
           .then((alerts) => setState((s) => ({ ...s, alerts })))
           .catch(() => {});
@@ -209,7 +223,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [refreshFromDatabase]);
+  }, [refreshFromDatabase, user]);
 
   // ─── Actions ───
 

@@ -83,7 +83,7 @@ export const ROLE_PORTALS: Record<UserRole, string> = {
   farmer: "/farmer",
   centre_operator: "/centre",
   district_admin: "/control-tower",
-  super_admin: "/control-tower",
+  super_admin: "/admin",
 };
 
 /** Role display names */

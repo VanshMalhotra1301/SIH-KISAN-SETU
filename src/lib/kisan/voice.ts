@@ -65,27 +65,8 @@ export function processSahayakQuery(
   const timeline = ctx.timeline || [];
   const centres = ctx.centres || [];
 
-  const defaultCentre: ProcurementCentre = {
-    id: "a1111111-1111-4111-8111-111111111111",
-    code: "A",
-    name: "Mandi Centre A — Karnal City",
-    nameHi: "मंडी केंद्र A — करनाल शहर",
-    distanceKm: 7,
-    queueLength: 1,
-    predictedWaitMin: 10,
-    capacityUsedPct: 34,
-    dailyCapacityQuintals: 5000,
-    procuredTodayQuintals: 1700,
-    activeCounters: 4,
-    totalCounters: 6,
-    processingRatePerHour: 18,
-    farmersToday: 142,
-    map: { x: 42, y: 55 },
-    recommended: true,
-  };
-
-  const recommendedCentre: ProcurementCentre = centres.find((c) => c.recommended) || centres[0] || defaultCentre;
-  const assignedCentre: ProcurementCentre = centres.find((c) => c.id === ticket?.centreId) || recommendedCentre;
+  const recommendedCentre: ProcurementCentre | undefined = centres.find((c) => c.recommended) || centres[0];
+  const assignedCentre: ProcurementCentre | undefined = centres.find((c) => c.id === ticket?.centreId) || recommendedCentre;
 
   const hasAny = (keywords: string[]) => keywords.some((k) => query.includes(k));
 
@@ -113,8 +94,8 @@ export function processSahayakQuery(
           ? `आपके पास अभी कोई सक्रिय टोकन नहीं है। क्या आप मंडी स्लॉट बुक करना चाहते हैं?`
           : `You don't have an active queue ticket yet. Would you like to explore available mandi slots?`,
         speechText: hi
-          ? `कोई सक्रिय टोकन नहीं मिला। स्लॉट बुकिंग पृष्ठ खोल रहा हूँ।`
-          : `No active ticket found. Opening slot booking.`,
+          ? `आपके पास कोई सक्रिय टोकन नहीं है। यदि आप आज ${cropHi} बेचना चाहते हैं, तो कृपया मंडी का स्लॉट बुक करें।`
+          : `You don't have an active token. Would you like to book a slot for your ${crop}?`,
         navigationTarget: "centres",
       };
     }
@@ -175,7 +156,20 @@ export function processSahayakQuery(
   }
 
   // ─── ACTION: BOOK SLOT ───
-  if (hasAny(["book", "बुक", "slot चुनो", "स्लॉट चुनो", "चुनो", "chuno", "book slot", "slot book"])) {
+  if (hasAny(["book", "स्लॉट", "booking", "book slot", "slot book", "number lagao"])) {
+    sessionState.lastTopic = "slot";
+    
+    if (!recommendedCentre) {
+      return {
+        text: hi
+          ? "क्षमा करें, अभी कोई मंडी केंद्र उपलब्ध नहीं है। कृपया बाद में प्रयास करें।"
+          : "Sorry, no mandi centres are currently available. Please try again later.",
+        speechText: hi
+          ? "क्षमा करें, अभी कोई मंडी केंद्र उपलब्ध नहीं है। कृपया बाद में प्रयास करें।"
+          : "Sorry, no mandi centres are currently available. Please try again later.",
+      };
+    }
+
     const slotWindow = "11:30 – 12:00";
     return {
       text: hi
@@ -200,16 +194,15 @@ export function processSahayakQuery(
 
     return {
       text: hi
-        ? `आपका निर्धारित खरीद स्लॉट ${slotWindow} है। आपको समय से 10 मिनट पहले (लगभग 11:20 बजे) ${assignedCentre.nameHi} के मुख्य द्वार पर पहुँचना चाहिए ताकि तुलाई समय पर शुरू हो सके।`
-        : `Your assigned slot window is ${slotWindow}. You should arrive 10 minutes prior (around 11:20 AM) at ${assignedCentre.name} main gate for smooth weighing.`,
+        ? `आपका निर्धारित खरीद स्लॉट ${slotWindow} है। आपको समय से 10 मिनट पहले (लगभग 11:20 बजे) ${assignedCentre?.nameHi || "मंडी"} के मुख्य द्वार पर पहुँचना चाहिए ताकि तुलाई समय पर शुरू हो सके।`
+        : `Your assigned slot window is ${slotWindow}. You should arrive 10 minutes prior (around 11:20 AM) at ${assignedCentre?.name || "mandi"} main gate for smooth weighing.`,
       speechText: hi
         ? `आपका स्लॉट ${slotWindow} है। 10 मिनट पहले मुख्य द्वार पर पहुँचें।`
         : `Your slot is ${slotWindow}. Please arrive 10 minutes before your window.`,
-      facts: [
-        { label: hi ? "स्लॉट समय" : "Slot Window", value: slotWindow },
-        { label: hi ? "मंडी" : "Mandi Yard", value: hi ? assignedCentre.nameHi : assignedCentre.name },
-        { label: hi ? "गेट रिपोर्टिंग" : "Gate Entry", value: "10 min prior" },
-      ],
+      facts: assignedCentre ? [
+        { label: hi ? "मंडी केंद्र" : "Mandi Centre", value: hi ? assignedCentre.nameHi : assignedCentre.name },
+        { label: hi ? "अनुमानित प्रतीक्षा" : "Estimated Wait", value: `${assignedCentre.predictedWaitMin} ${hi ? "मिनट" : "min"}` },
+      ] : [],
       suggestedFollowUps: [
         { textEn: "When is my turn?", textHi: "मेरी बारी कब आएगी?" },
         { textEn: "Where is my payment?", textHi: "मेरी payment कब आएगी?" },

@@ -11,6 +11,7 @@ const allNavItems = [
   { to: "/farmer", label: "Farmer Portal", labelHi: "किसान पोर्टल", roles: ["farmer", "super_admin"] },
   { to: "/centre", label: "Mandi Centre", labelHi: "खरीद केंद्र", roles: ["centre_operator", "super_admin"] },
   { to: "/control-tower", label: "Control Tower", labelHi: "कंट्रोल टावर", roles: ["district_admin", "super_admin"] },
+  { to: "/admin", label: "Admin Portal", labelHi: "एडमिन पोर्टल", roles: ["super_admin"] },
   { to: "/login", label: "Portals / Login", labelHi: "लॉगिन / पोर्टल", roles: ["guest"] },
 ] as const;
 
@@ -18,7 +19,7 @@ const roleBadgeMap = {
   farmer: { label: "Farmer", labelHi: "किसान", icon: "🌾", tone: "leaf" },
   centre_operator: { label: "Centre", labelHi: "केंद्र", icon: "🏢", tone: "navy" },
   district_admin: { label: "Admin", labelHi: "प्रशासन", icon: "🛰️", tone: "saffron" },
-  super_admin: { label: "Super Admin", labelHi: "सुपर एडमिन", icon: "🏛️", tone: "navy" },
+  super_admin: { label: "Super Admin", labelHi: "सुपर एडमिन", icon: "🏛️", tone: "danger" },
 } as const;
 
 export function TopBar({ tone = "light" }: { tone?: "light" | "dark" }) {

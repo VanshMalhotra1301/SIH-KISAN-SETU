@@ -197,7 +197,7 @@ function Landing() {
           </div>
           <ol className="divide-y divide-border">
             {[
-              "Centre A crosses safe capacity — arrival rate outpaces processing rate",
+              "A centre crosses safe capacity — arrival rate outpaces processing rate",
               "AI predicts congestion 42 minutes before it happens",
               "Recommendation: shift 18 future appointments → Centre B",
               "District officer approves in one tap",

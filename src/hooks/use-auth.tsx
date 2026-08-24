@@ -25,6 +25,8 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<AppUser>;
   signUp: (payload: SignUpPayload) => Promise<{ user: AppUser | null; requiresEmailConfirmation: boolean }>;
   forgotPassword: (email: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  resetPassword: (newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   getDefaultPath: () => string;
   clearError: () => void;
@@ -155,15 +157,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const cleanEmail = payload.email.trim().toLowerCase();
 
-      // Prepare RPC parameters
-      let village = "Bahadurgarh";
+      let village = "";
       let crop = "Wheat";
       let quantity = 120;
       let centreId: string | null = null;
       let department = "Department of Agriculture";
 
       if (payload.role === "farmer") {
-        village = payload.village || "Bahadurgarh";
+        village = payload.village || "";
         crop = payload.crop || "Wheat";
         quantity = payload.quantityQuintals || 120;
       } else if (payload.role === "centre_operator") {
@@ -181,7 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         p_role: payload.role,
         p_full_name: payload.fullName,
         p_phone: payload.phone,
-        p_district: payload.district || "Karnal",
+        p_district: payload.district || "",
         p_village: village,
         p_crop: crop,
         p_quantity: quantity,
@@ -243,7 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const cleanEmail = email.trim().toLowerCase();
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: `${window.location.origin}/login`,
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (resetError) {
@@ -291,6 +292,82 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearError = () => setError(null);
 
+  /**
+   * Change password for authenticated user.
+   * Re-authenticates with current password first, then updates.
+   */
+  const changePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      if (!user?.email) {
+        throw new Error("No authenticated user session found.");
+      }
+
+      // Re-authenticate with current password to verify identity
+      const { error: reAuthError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (reAuthError) {
+        throw new Error("Current password is incorrect.");
+      }
+
+      // Update to new password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        throw new Error(updateError.message || "Failed to update password.");
+      }
+
+      await auditService.log({
+        actorId: user.id,
+        actorRole: user.role,
+        action: "change_password",
+      });
+
+      setNotice("Password updated successfully.");
+    } catch (err: any) {
+      const message = err?.message || "Failed to change password.";
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Reset password using recovery token (from email link).
+   */
+  const resetPassword = async (newPassword: string): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        throw new Error(updateError.message || "Failed to reset password.");
+      }
+
+      setNotice("Password has been reset successfully. You can now sign in.");
+    } catch (err: any) {
+      const message = err?.message || "Failed to reset password.";
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -304,6 +381,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         signUp,
         forgotPassword,
+        changePassword,
+        resetPassword,
         logout,
         getDefaultPath,
         clearError,

@@ -7,9 +7,11 @@ import { cn } from "@/lib/utils";
 
 const healthFill = { green: "var(--leaf)", yellow: "var(--saffron)", red: "var(--danger)" } as const;
 
-export function DistrictMap({ centres }: { centres: ProcurementCentre[] }) {
+export function DistrictMap({ centres, district }: { centres: ProcurementCentre[]; district?: string }) {
   const [selectedId, setSelectedId] = useState(centres[0]?.id ?? "");
   const selected = centres.find((c) => c.id === selectedId) ?? centres[0];
+
+  const districtLabel = district || "District";
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
@@ -17,7 +19,7 @@ export function DistrictMap({ centres }: { centres: ProcurementCentre[] }) {
         <div className="absolute inset-0 grid-lines opacity-40" aria-hidden />
         <div className="relative flex items-center justify-between px-1 pb-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-signal">
-            Karnal district · live centre health
+            {districtLabel} · live centre health
           </p>
           <div className="hidden gap-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-command-muted sm:flex">
             <span className="flex items-center gap-1.5"><i className="size-2 rounded-full bg-leaf" /> Normal</span>

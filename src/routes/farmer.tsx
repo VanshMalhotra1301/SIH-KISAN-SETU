@@ -77,8 +77,8 @@ function FarmerPortal() {
   const registeredCrop = farmer?.crop || user?.crop || "Wheat";
   const registeredCropHi = farmer?.cropHi || (registeredCrop === "Wheat" ? "गेहूँ" : registeredCrop === "Paddy" ? "धान" : registeredCrop === "Mustard" ? "सरसों" : "चना");
   const registeredQuantity = farmer?.quantityQuintals || user?.quantityQuintals || 120;
-  const villageName = farmer?.village || user?.village || "Bahadurgarh";
-  const districtName = farmer?.district || user?.district || "Karnal";
+  const villageName = farmer?.village || user?.village || "";
+  const districtName = farmer?.district || user?.district || "";
 
   // Best recommended centre
   const recommendedCentre = centres.find((c) => c.recommended) || centres[0];
@@ -622,7 +622,10 @@ function FarmerPortal() {
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => alert(hi ? "मंडी का पता: जीटी रोड, निलोखेड़ी मंडी यार्ड, करनाल" : "Mandi Address: GT Road, Mandi Yard, Karnal")}
+                      onClick={() => {
+                        const centreName = activeCentre ? (hi ? activeCentre.nameHi : activeCentre.name) : (hi ? "खरीद केंद्र" : "Procurement Centre");
+                        alert(hi ? `मंडी: ${centreName}` : `Mandi: ${centreName}`);
+                      }}
                       className="rounded-xl bg-navy py-3 text-xs font-bold text-primary-foreground focus-ring"
                     >
                       🧭 {hi ? "दिशा-निर्देश" : "Get Directions"}
@@ -833,6 +836,9 @@ function FarmerPortal() {
                 🚪 {hi ? "लॉगआउट" : "Sign Out"}
               </button>
             </div>
+
+            {/* Change Password Component */}
+            <ChangePasswordCard hi={hi} />
           </section>
         )}
 
@@ -961,5 +967,89 @@ function RegistrationCard({
             : (hi ? "परिवर्तन सुरक्षित करें" : "Save Changes to Database")}
       </button>
     </section>
+  );
+}
+
+function ChangePasswordCard({ hi }: { hi: boolean }) {
+  const { changePassword } = useAuth();
+  const [currentPwd, setCurrentPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPwd.length < 6) {
+      setErrorMsg(hi ? "नया पासवर्ड कम से कम 6 अक्षरों का होना चाहिए" : "New password must be at least 6 characters");
+      return;
+    }
+    setLoading(true);
+    setErrorMsg(null);
+    setSuccess(false);
+    try {
+      await changePassword(currentPwd, newPwd);
+      setSuccess(true);
+      setCurrentPwd("");
+      setNewPwd("");
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 rounded-xl border border-border bg-card p-5">
+      <h3 className="font-display text-sm font-extrabold text-navy">
+        {hi ? "पासवर्ड बदलें" : "Change Password"}
+      </h3>
+      {success && (
+        <div className="mt-3 rounded-lg bg-leaf-soft p-2.5 text-xs font-semibold text-leaf">
+          ✓ {hi ? "पासवर्ड सफलतापूर्वक अपडेट हो गया!" : "Password updated successfully!"}
+        </div>
+      )}
+      {errorMsg && (
+        <div className="mt-3 rounded-lg bg-danger-soft p-2.5 text-xs font-semibold text-danger">
+          {errorMsg}
+        </div>
+      )}
+      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+        <div>
+          <label className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            {hi ? "वर्तमान पासवर्ड" : "Current Password"}
+          </label>
+          <input
+            type="password"
+            required
+            value={currentPwd}
+            onChange={(e) => setCurrentPwd(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-ring"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            {hi ? "नया पासवर्ड" : "New Password"}
+          </label>
+          <input
+            type="password"
+            required
+            value={newPwd}
+            onChange={(e) => setNewPwd(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-ring"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className={cn(
+            "w-full rounded-lg bg-navy py-2 text-xs font-bold text-primary-foreground focus-ring transition-transform",
+            loading ? "opacity-70" : "hover:-translate-y-0.5"
+          )}
+        >
+          {loading ? (hi ? "अपडेट हो रहा है..." : "Updating...") : (hi ? "पासवर्ड बदलें" : "Update Password")}
+        </button>
+      </form>
+    </div>
   );
 }

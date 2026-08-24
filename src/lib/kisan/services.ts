@@ -210,7 +210,26 @@ export const centreService = {
       .select("*")
       .order("code");
     if (error) throw new Error(`Failed to load centres: ${error.message}`);
-    if (!data || data.length === 0) throw new Error("No procurement centres found in database");
+    return (data || []).map(mapCentre);
+  },
+
+  /** List centres filtered by district */
+  listByDistrict: async (district: string): Promise<ProcurementCentre[]> => {
+    const { data, error } = await supabase
+      .from("procurement_centres")
+      .select("*")
+      .ilike("district", `%${district}%`)
+      .order("code");
+    if (error) throw new Error(`Failed to load centres: ${error.message}`);
+    // If no district-specific centres found, fall back to all centres
+    if (!data || data.length === 0) {
+      const { data: allData, error: allError } = await supabase
+        .from("procurement_centres")
+        .select("*")
+        .order("code");
+      if (allError) throw new Error(`Failed to load centres: ${allError.message}`);
+      return (allData || []).map(mapCentre);
+    }
     return data.map(mapCentre);
   },
 
@@ -854,5 +873,162 @@ export const notificationService = {
   /** Mark as read */
   markRead: async (notifId: string): Promise<void> => {
     await supabase.from("notifications").update({ is_read: true }).eq("id", notifId);
+  },
+};
+
+// ─── Admin Service (Super Admin Only) ───
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: string;
+  fullName: string;
+  phone: string;
+  district: string;
+  centreId: string | null;
+  createdAt: string;
+}
+
+export const adminService = {
+  /** List all users with their profiles */
+  listUsers: async (): Promise<AdminUser[]> => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(`Failed to load users: ${error.message}`);
+    return (data || []).map((u) => ({
+      id: u.id,
+      email: u.email || "",
+      role: u.role,
+      fullName: u.full_name,
+      phone: u.phone || "",
+      district: u.district || "",
+      centreId: u.centre_id || null,
+      createdAt: u.created_at,
+    }));
+  },
+
+  /** Update a user's role */
+  updateUserRole: async (userId: string, role: string): Promise<void> => {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ role, updated_at: new Date().toISOString() })
+      .eq("id", userId);
+    if (error) throw new Error(`Failed to update user role: ${error.message}`);
+  },
+
+  /** Update a user's profile */
+  updateUser: async (userId: string, updates: Record<string, any>): Promise<void> => {
+    const dbUpdates: Record<string, any> = { updated_at: new Date().toISOString() };
+    if (updates.fullName !== undefined) dbUpdates.full_name = updates.fullName;
+    if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
+    if (updates.district !== undefined) dbUpdates.district = updates.district;
+    if (updates.role !== undefined) dbUpdates.role = updates.role;
+    if (updates.centreId !== undefined) dbUpdates.centre_id = updates.centreId;
+    const { error } = await supabase.from("profiles").update(dbUpdates).eq("id", userId);
+    if (error) throw new Error(`Failed to update user: ${error.message}`);
+  },
+
+  /** Create a new procurement centre */
+  createCentre: async (centre: {
+    code: string;
+    name: string;
+    nameHi: string;
+    district?: string;
+    dailyCapacityQuintals?: number;
+    totalCounters?: number;
+    mapX?: number;
+    mapY?: number;
+  }): Promise<string> => {
+    const { data, error } = await supabase
+      .from("procurement_centres")
+      .insert({
+        code: centre.code,
+        name: centre.name,
+        name_hi: centre.nameHi,
+        district: centre.district || "",
+        daily_capacity_quintals: centre.dailyCapacityQuintals || 4000,
+        total_counters: centre.totalCounters || 6,
+        active_counters: centre.totalCounters || 6,
+        map_x: centre.mapX || 50,
+        map_y: centre.mapY || 50,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(`Failed to create centre: ${error.message}`);
+    return data.id;
+  },
+
+  /** Assign an operator to a centre */
+  assignOperator: async (userId: string, centreId: string): Promise<void> => {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ centre_id: centreId, updated_at: new Date().toISOString() })
+      .eq("id", userId);
+    if (error) throw new Error(`Failed to assign operator: ${error.message}`);
+  },
+
+  /** List audit logs with optional filters */
+  listAuditLogs: async (filters?: {
+    actorId?: string;
+    action?: string;
+    limit?: number;
+  }): Promise<Array<{
+    id: string;
+    actorId: string | null;
+    actorRole: string | null;
+    action: string;
+    targetType: string | null;
+    targetId: string | null;
+    metadata: Record<string, any>;
+    createdAt: string;
+  }>> => {
+    let query = supabase.from("audit_logs").select("*").order("created_at", { ascending: false });
+    if (filters?.actorId) query = query.eq("actor_id", filters.actorId);
+    if (filters?.action) query = query.eq("action", filters.action);
+    query = query.limit(filters?.limit || 100);
+    const { data, error } = await query;
+    if (error) throw new Error(`Failed to load audit logs: ${error.message}`);
+    return (data || []).map((l) => ({
+      id: l.id,
+      actorId: l.actor_id,
+      actorRole: l.actor_role,
+      action: l.action,
+      targetType: l.target_type,
+      targetId: l.target_id,
+      metadata: l.metadata || {},
+      createdAt: l.created_at,
+    }));
+  },
+
+  /** Get system summary stats */
+  getSystemStats: async (): Promise<{
+    totalUsers: number;
+    totalFarmers: number;
+    totalOperators: number;
+    totalAdmins: number;
+    totalCentres: number;
+    totalTickets: number;
+    totalPayments: number;
+  }> => {
+    const [users, farmers, operators, admins, centres, tickets, payments] = await Promise.all([
+      supabase.from("profiles").select("id", { count: "exact", head: true }),
+      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "farmer"),
+      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "centre_operator"),
+      supabase.from("profiles").select("id", { count: "exact", head: true }).in("role", ["district_admin", "super_admin"]),
+      supabase.from("procurement_centres").select("id", { count: "exact", head: true }),
+      supabase.from("queue_tickets").select("id", { count: "exact", head: true }),
+      supabase.from("payments").select("id", { count: "exact", head: true }),
+    ]);
+    return {
+      totalUsers: users.count || 0,
+      totalFarmers: farmers.count || 0,
+      totalOperators: operators.count || 0,
+      totalAdmins: admins.count || 0,
+      totalCentres: centres.count || 0,
+      totalTickets: tickets.count || 0,
+      totalPayments: payments.count || 0,
+    };
   },
 };
