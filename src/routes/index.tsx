@@ -61,24 +61,29 @@ function Landing() {
 
   return (
     <PageShell className="pt-0">
-      <section className="relative mt-6 overflow-hidden rounded-3xl bg-hero px-5 py-12 text-primary-foreground sm:px-10 sm:py-16">
+      <section className="relative mt-6 overflow-hidden rounded-3xl bg-black px-5 py-12 text-primary-foreground sm:px-10 sm:py-16 shadow-2xl">
+        {/* Real authentic mandi dawn image — true colors, no blur or blueish tint */}
         <img
           src={heroImage}
           alt="Farmers at a grain procurement mandi at dawn"
-          className="pointer-events-none absolute inset-0 size-full object-cover opacity-25 mix-blend-luminosity"
-          loading="lazy"
+          className="pointer-events-none absolute inset-0 size-full object-cover object-center"
+          loading="eager"
         />
+        {/* Natural contrast vignette to ensure crystal clear typography while preserving real photo colors */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/25" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+
         <div className="relative max-w-3xl">
           <PrototypeBadge tone="dark" label="SIH 2026 · PS 26032 · Live Procurement Orchestration" />
-          <h1 className="mt-5 font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
+          <h1 className="mt-5 font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl text-white drop-shadow-md">
             KISAN SETU
           </h1>
-          <p className="mt-4 text-balance-tight text-lg font-semibold text-primary-foreground/90 sm:text-2xl">
+          <p className="mt-4 text-balance-tight text-lg font-semibold text-white/95 sm:text-2xl drop-shadow-sm">
             {hi
               ? "पंजीकरण से खरीद और भुगतान तक — बिना अनिश्चितता।"
               : "From registration to procurement to payment — without the uncertainty."}
           </p>
-          <p className="mt-4 max-w-xl text-sm leading-relaxed text-primary-foreground/70 sm:text-base">
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-white/80 sm:text-base">
             {hi
               ? "कतार को केवल डिजिटल न करें। उसका पूर्वानुमान लगाएँ, अनुकूल बनाएँ और संचालित करें।"
               : "Don't just digitize the queue. Predict it, optimize it and orchestrate it."}
@@ -99,7 +104,7 @@ function Landing() {
                 <button
                   type="button"
                   onClick={logout}
-                  className="rounded-xl border border-primary-foreground/25 bg-primary-foreground/10 px-5 py-3.5 text-sm font-bold text-primary-foreground backdrop-blur transition-colors hover:bg-primary-foreground/20 focus-ring"
+                  className="rounded-xl border border-white/25 bg-black/40 px-5 py-3.5 text-sm font-bold text-white backdrop-blur-md transition-colors hover:bg-black/60 focus-ring"
                 >
                   🚪 {hi ? "साइन आउट" : "Sign Out"}
                 </button>
@@ -114,7 +119,7 @@ function Landing() {
                 </Link>
                 <Link
                   to="/login"
-                  className="rounded-xl border border-primary-foreground/25 bg-primary-foreground/10 px-5 py-3.5 text-sm font-bold text-primary-foreground backdrop-blur transition-colors hover:bg-primary-foreground/20 focus-ring"
+                  className="rounded-xl border border-white/25 bg-black/40 px-5 py-3.5 text-sm font-bold text-white backdrop-blur-md transition-colors hover:bg-black/60 focus-ring"
                 >
                   📝 {hi ? "नया पंजीकरण" : "Register as Farmer"}
                 </Link>
@@ -130,11 +135,11 @@ function Landing() {
             { label: "Avg wait (predicted)", value: `${summary.averageWaitMin} min` },
             { label: "Overloads prevented", value: summary.predictedOverloads },
           ].map((s) => (
-            <div key={s.label} className="rounded-xl border border-primary-foreground/15 bg-primary-foreground/10 px-4 py-3 backdrop-blur">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-foreground/60">
+            <div key={s.label} className="rounded-2xl border border-white/20 bg-black/40 px-4 py-3.5 backdrop-blur-md shadow-lg">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/70">
                 {s.label}
               </p>
-              <p className="font-display text-2xl font-extrabold tabular-nums">{s.value}</p>
+              <p className="mt-0.5 font-display text-2xl font-black text-white tabular-nums">{s.value}</p>
             </div>
           ))}
         </div>
