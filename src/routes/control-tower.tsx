@@ -40,12 +40,20 @@ const recStatusConfig: Record<AiRecommendation["status"], { label: string; tone:
 
 /* ─── Activity kind styling ─── */
 
-const kindStyles: Record<ActivityEvent["kind"], { icon: string; color: string }> = {
+const defaultKindStyle = { icon: "📋", color: "text-cyan-signal" };
+
+const kindStyles: Record<string, { icon: string; color: string }> = {
   queue: { icon: "📋", color: "text-cyan-signal" },
   ai: { icon: "🤖", color: "text-saffron" },
   payment: { icon: "💰", color: "text-leaf" },
   centre: { icon: "🏢", color: "text-cyan-signal" },
   admin: { icon: "👤", color: "text-command-fg" },
+  call: { icon: "📢", color: "text-cyan-signal" },
+  weigh: { icon: "⚖️", color: "text-leaf" },
+  grade: { icon: "🔬", color: "text-saffron" },
+  complete: { icon: "✓", color: "text-leaf" },
+  accept: { icon: "✓", color: "text-leaf" },
+  reject: { icon: "⚠️", color: "text-danger" },
 };
 
 /* ─── Page ─── */
@@ -293,7 +301,7 @@ function ControlTowerPage() {
             </div>
             <div className="max-h-80 divide-y divide-command-line/50 overflow-y-auto">
               {activity.map((event) => {
-                const kind = kindStyles[event.kind];
+                const kind = kindStyles[event.kind] || defaultKindStyle;
                 return (
                   <div key={event.id} className="flex gap-3 px-5 py-3 animate-rise">
                     <span className="mt-0.5 shrink-0 text-sm" aria-hidden>{kind.icon}</span>
