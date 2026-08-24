@@ -117,7 +117,10 @@ function CentrePage() {
   // Filter queue rows for active centre
   const centreTickets = useMemo(() => {
     return queueRows.filter((row) => {
-      // Filter by search
+      // 1. Strict centre isolation: Only show tickets for this active centre
+      if (row.centreId && row.centreId !== activeCentre.id) return false;
+
+      // 2. Filter by search query
       const matchesSearch =
         row.token.toLowerCase().includes(searchQuery.toLowerCase()) ||
         row.farmerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -126,7 +129,7 @@ function CentrePage() {
 
       if (!matchesSearch) return false;
 
-      // Filter by status
+      // 3. Filter by status tabs
       if (statusFilter === "waiting") return row.status === "waiting" || row.status === "arrived";
       if (statusFilter === "processing") return row.status === "weighing" || row.status === "grading";
       if (statusFilter === "completed") return row.status === "done" || row.status === "accepted";
@@ -134,16 +137,16 @@ function CentrePage() {
 
       return true;
     });
-  }, [queueRows, searchQuery, statusFilter]);
+  }, [queueRows, activeCentre.id, searchQuery, statusFilter]);
 
-  // Active queue vs completed
+  // Active queue vs completed for this centre
   const activeInQueue = useMemo(
-    () => queueRows.filter((r) => r.status !== "done" && r.status !== "rejected"),
-    [queueRows]
+    () => queueRows.filter((r) => (!r.centreId || r.centreId === activeCentre.id) && r.status !== "done" && r.status !== "rejected"),
+    [queueRows, activeCentre.id]
   );
   const completedToday = useMemo(
-    () => queueRows.filter((r) => r.status === "done" || r.status === "accepted"),
-    [queueRows]
+    () => queueRows.filter((r) => (!r.centreId || r.centreId === activeCentre.id) && (r.status === "done" || r.status === "accepted")),
+    [queueRows, activeCentre.id]
   );
 
   // Counter management
@@ -362,18 +365,18 @@ function CentrePage() {
       <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
           label={hi ? "आज के कुल किसान" : "Farmers Served"}
-          value={activeCentre.farmersToday}
+          value={activeInQueue.length + completedToday.length}
           accent="navy"
         />
         <StatCard
           label={hi ? "सक्रिय कतार" : "Live Queue"}
-          value={activeCentre.queueLength}
+          value={activeInQueue.length}
           unit={hi ? "किसान" : "waiting"}
-          accent={activeCentre.queueLength > 20 ? "danger" : "saffron"}
+          accent={activeInQueue.length > 10 ? "danger" : "saffron"}
         />
         <StatCard
           label={hi ? "आज की तुलाई" : "Procured Today"}
-          value={Number(activeCentre.procuredTodayQuintals).toLocaleString("en-IN")}
+          value={completedToday.reduce((sum, r) => sum + (r.actualQuintals || r.quantityQuintals), 0).toLocaleString("en-IN")}
           unit="qtl"
           accent="leaf"
         />
@@ -384,8 +387,8 @@ function CentrePage() {
           accent={activeCentre.capacityUsedPct >= 85 ? "danger" : activeCentre.capacityUsedPct >= 65 ? "saffron" : "leaf"}
         />
         <StatCard
-          label={hi ? "औसत प्रतीक्षा" : "Avg Wait"}
-          value={activeCentre.predictedWaitMin}
+          label={hi ? "अनुमानित प्रतीक्षा" : "Est. Wait"}
+          value={activeInQueue.length > 0 ? Math.max(10, Math.round((activeInQueue.length / Math.max(1, activeCentre.activeCounters)) * 10)) : 0}
           unit="min"
           accent={activeCentre.predictedWaitMin > 60 ? "danger" : "leaf"}
         />

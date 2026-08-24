@@ -347,6 +347,7 @@ export const queueService = {
     return (data || []).map((t) => ({
       id: t.id,
       token: t.token,
+      centreId: t.centre_id,
       farmerId: t.farmer_id || undefined,
       farmerName: t.farmer_name || "Unknown Farmer",
       village: t.village || "",
@@ -365,7 +366,7 @@ export const queueService = {
       completedAt: t.completed_at || undefined,
       slotWindow: t.slot_window || "11:30 – 12:00",
       waitedMin: t.waited_min || 0,
-      status: (t.stage === "in_queue" ? "waiting" : t.stage) as QueueRow["status"],
+      status: (t.stage === "in_queue" || t.stage === "scheduled" ? "waiting" : t.stage) as QueueRow["status"],
     }));
   },
 
@@ -448,6 +449,7 @@ export const operatorService = {
     return (data || []).map((t) => ({
       id: t.id,
       token: t.token,
+      centreId: t.centre_id,
       farmerId: t.farmer_id || undefined,
       farmerName: t.farmer_name || "Unknown Farmer",
       village: t.village || "",
@@ -466,7 +468,7 @@ export const operatorService = {
       completedAt: t.completed_at || t.updated_at,
       slotWindow: t.slot_window || "11:30 – 12:00",
       waitedMin: t.waited_min || 0,
-      status: (t.stage === "in_queue" ? "waiting" : t.stage) as QueueRow["status"],
+      status: (t.stage === "in_queue" || t.stage === "scheduled" ? "waiting" : t.stage) as QueueRow["status"],
     }));
   },
 };

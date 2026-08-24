@@ -93,6 +93,7 @@ export interface PaymentStatus {
 export interface QueueRow {
   id?: string | undefined;
   token: string;
+  centreId: string;
   farmerId?: string | undefined;
   farmerName: string;
   village: string;
