@@ -91,14 +91,27 @@ export interface PaymentStatus {
 }
 
 export interface QueueRow {
+  id?: string | undefined;
   token: string;
+  farmerId?: string | undefined;
   farmerName: string;
   village: string;
   crop: string;
   quantityQuintals: number;
   slotWindow: string;
   waitedMin: number;
-  status: "waiting" | "grading" | "weighing" | "payment" | "done";
+  counterAssigned?: number | undefined;
+  actualQuintals?: number | undefined;
+  grossWeightQuintals?: number | undefined;
+  tareWeightQuintals?: number | undefined;
+  qualityGrade?: string | undefined;
+  moisturePct?: number | undefined;
+  foreignMatterPct?: number | undefined;
+  jFormNo?: string | undefined;
+  rejectionReason?: string | undefined;
+  operatorNotes?: string | undefined;
+  completedAt?: string | undefined;
+  status: "waiting" | "arrived" | "weighing" | "grading" | "accepted" | "rejected" | "payment" | "done";
 }
 
 export interface CentreAlert {

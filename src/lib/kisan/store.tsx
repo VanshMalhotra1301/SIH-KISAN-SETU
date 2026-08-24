@@ -18,6 +18,8 @@ import {
   centreService,
   farmerService,
   forecastService,
+  operatorService,
+  type OperatorProcessParams,
   paymentService,
   procurementService,
   queueService,
@@ -74,6 +76,8 @@ interface KisanActions {
   overrideRecommendation: () => void;
   refreshFromDatabase: () => Promise<void>;
   updateFarmerProfile: (updates: Partial<Farmer>) => Promise<void>;
+  operatorProcessTicket: (params: OperatorProcessParams) => Promise<any>;
+  operatorUpdateCounters: (centreId: string, activeCounters: number) => Promise<void>;
 }
 
 interface KisanContextValue extends KisanState, KisanActions {
@@ -247,6 +251,17 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     pushActivity({ kind: "queue", message: `Farmer registration updated: ${updates.crop || "Wheat"} · ${updates.quantityQuintals || 0} qtl` });
   }, [pushActivity, state.farmer?.id]);
 
+  const operatorProcessTicket = useCallback(async (params: OperatorProcessParams) => {
+    const result = await operatorService.processTicket(params);
+    await refreshFromDatabase();
+    return result;
+  }, [refreshFromDatabase]);
+
+  const operatorUpdateCounters = useCallback(async (centreId: string, activeCounters: number) => {
+    await operatorService.updateCounters(centreId, activeCounters);
+    await refreshFromDatabase();
+  }, [refreshFromDatabase]);
+
   /** Operator trigger: Centre has surge */
   const triggerOverload = useCallback(() => {
     // Find the centre with highest capacity usage (dynamic, not hardcoded)
@@ -372,6 +387,8 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       overrideRecommendation,
       refreshFromDatabase,
       updateFarmerProfile,
+      operatorProcessTicket,
+      operatorUpdateCounters,
       summary,
       centreById: (id: string) => centres.find((c) => c.id === id || c.code === id),
       recommendedCentre: centres.find((c) => c.recommended),
@@ -379,7 +396,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
   }, [
     state, setLanguage, toggleLanguage, triggerOverload,
     reviewRecommendation, approveRecommendation, overrideRecommendation,
-    refreshFromDatabase, updateFarmerProfile,
+    refreshFromDatabase, updateFarmerProfile, operatorProcessTicket, operatorUpdateCounters,
   ]);
 
   return <KisanContext.Provider value={value}>{children}</KisanContext.Provider>;

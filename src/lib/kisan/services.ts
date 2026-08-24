@@ -345,12 +345,25 @@ export const queueService = {
 
     if (error) throw new Error(`Failed to load centre queue: ${error.message}`);
     return (data || []).map((t) => ({
+      id: t.id,
       token: t.token,
-      farmerName: t.farmer_name || "Unknown",
+      farmerId: t.farmer_id || undefined,
+      farmerName: t.farmer_name || "Unknown Farmer",
       village: t.village || "",
       crop: t.crop || "Wheat",
       quantityQuintals: Number(t.quantity_quintals) || 0,
-      slotWindow: t.slot_window,
+      actualQuintals: t.actual_quintals ? Number(t.actual_quintals) : undefined,
+      grossWeightQuintals: t.gross_weight_quintals ? Number(t.gross_weight_quintals) : undefined,
+      tareWeightQuintals: t.tare_weight_quintals ? Number(t.tare_weight_quintals) : undefined,
+      qualityGrade: t.quality_grade || undefined,
+      moisturePct: t.moisture_pct ? Number(t.moisture_pct) : undefined,
+      foreignMatterPct: t.foreign_matter_pct ? Number(t.foreign_matter_pct) : undefined,
+      jFormNo: t.j_form_no || undefined,
+      rejectionReason: t.rejection_reason || undefined,
+      operatorNotes: t.operator_notes || undefined,
+      counterAssigned: t.counter_assigned || undefined,
+      completedAt: t.completed_at || undefined,
+      slotWindow: t.slot_window || "11:30 – 12:00",
       waitedMin: t.waited_min || 0,
       status: (t.stage === "in_queue" ? "waiting" : t.stage) as QueueRow["status"],
     }));
@@ -372,6 +385,89 @@ export const queueService = {
       .update({ stage, updated_at: new Date().toISOString() })
       .eq("token", token);
     if (error) throw new Error(`Failed to update ticket stage: ${error.message}`);
+  },
+};
+
+// ─── Operator Workstation Service ───
+
+export interface OperatorProcessParams {
+  ticketId: string;
+  action: "call" | "weigh" | "grade" | "accept" | "reject" | "complete";
+  counter?: number | undefined;
+  gross?: number | undefined;
+  tare?: number | undefined;
+  actualQuintals?: number | undefined;
+  qualityGrade?: string | undefined;
+  moisture?: number | undefined;
+  foreignMatter?: number | undefined;
+  jFormNo?: string | undefined;
+  notes?: string | undefined;
+  rejectionReason?: string | undefined;
+}
+
+export const operatorService = {
+  /** Atomically process a farmer's ticket through procurement stages */
+  processTicket: async (params: OperatorProcessParams): Promise<any> => {
+    const { data, error } = await supabase.rpc("operator_process_ticket", {
+      p_ticket_id: params.ticketId,
+      p_action: params.action,
+      p_counter: params.counter ?? null,
+      p_gross: params.gross ?? null,
+      p_tare: params.tare ?? null,
+      p_actual_quintals: params.actualQuintals ?? null,
+      p_quality_grade: params.qualityGrade ?? null,
+      p_moisture: params.moisture ?? null,
+      p_foreign_matter: params.foreignMatter ?? null,
+      p_j_form_no: params.jFormNo ?? null,
+      p_notes: params.notes ?? null,
+      p_rejection_reason: params.rejectionReason ?? null,
+    });
+
+    if (error) throw new Error(`Operator processing failed: ${error.message}`);
+    return data;
+  },
+
+  /** Update operational counter count */
+  updateCounters: async (centreId: string, activeCounters: number): Promise<void> => {
+    const { error } = await supabase
+      .from("procurement_centres")
+      .update({ active_counters: activeCounters, updated_at: new Date().toISOString() })
+      .eq("id", centreId);
+
+    if (error) throw new Error(`Failed to update active counters: ${error.message}`);
+    await supabase.rpc("recalculate_centre_stats");
+  },
+
+  /** Fetch today's completed procurements register */
+  fetchRegister: async (centreId?: string): Promise<QueueRow[]> => {
+    let query = supabase.from("queue_tickets").select("*").in("stage", ["done", "accepted", "rejected"]);
+    if (centreId) query = query.eq("centre_id", centreId);
+    const { data, error } = await query.order("updated_at", { ascending: false });
+
+    if (error) throw new Error(`Failed to load procurement register: ${error.message}`);
+    return (data || []).map((t) => ({
+      id: t.id,
+      token: t.token,
+      farmerId: t.farmer_id || undefined,
+      farmerName: t.farmer_name || "Unknown Farmer",
+      village: t.village || "",
+      crop: t.crop || "Wheat",
+      quantityQuintals: Number(t.quantity_quintals) || 0,
+      actualQuintals: t.actual_quintals ? Number(t.actual_quintals) : undefined,
+      grossWeightQuintals: t.gross_weight_quintals ? Number(t.gross_weight_quintals) : undefined,
+      tareWeightQuintals: t.tare_weight_quintals ? Number(t.tare_weight_quintals) : undefined,
+      qualityGrade: t.quality_grade || undefined,
+      moisturePct: t.moisture_pct ? Number(t.moisture_pct) : undefined,
+      foreignMatterPct: t.foreign_matter_pct ? Number(t.foreign_matter_pct) : undefined,
+      jFormNo: t.j_form_no || undefined,
+      rejectionReason: t.rejection_reason || undefined,
+      operatorNotes: t.operator_notes || undefined,
+      counterAssigned: t.counter_assigned || undefined,
+      completedAt: t.completed_at || t.updated_at,
+      slotWindow: t.slot_window || "11:30 – 12:00",
+      waitedMin: t.waited_min || 0,
+      status: (t.stage === "in_queue" ? "waiting" : t.stage) as QueueRow["status"],
+    }));
   },
 };
 
