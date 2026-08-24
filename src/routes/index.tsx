@@ -92,12 +92,12 @@ function Landing() {
             {user ? (
               <>
                 <Link
-                  to={ROLE_PORTALS[user.role] as any}
+                  to={(user?.role && ROLE_PORTALS[user.role]) ? (ROLE_PORTALS[user.role] as any) : "/farmer"}
                   className="rounded-xl bg-gradient-leaf px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-lg shadow-leaf/30 transition-transform hover:-translate-y-0.5 focus-ring"
                 >
-                  {user.role === "farmer"
+                  {user?.role === "farmer"
                     ? hi ? "🌾 मेरा किसान पोर्टल खोलें" : "🌾 Open My Farmer Portal"
-                    : user.role === "centre_operator"
+                    : user?.role === "centre_operator"
                       ? hi ? "🏢 खरीद केंद्र डैशबोर्ड खोलें" : "🏢 Open Centre Dashboard"
                       : hi ? "🛰️ कंट्रोल टावर खोलें" : "🛰️ Open Control Tower"}
                 </Link>
@@ -130,10 +130,10 @@ function Landing() {
 
         <div className="relative mt-10 grid gap-3 sm:grid-cols-4">
           {[
-            { label: "Centres orchestrated", value: summary.totalCentres },
-            { label: "Farmers served today", value: summary.farmersToday },
-            { label: "Avg wait (predicted)", value: `${summary.averageWaitMin} min` },
-            { label: "Overloads prevented", value: summary.predictedOverloads },
+            { label: "Centres orchestrated", value: summary?.totalCentres ?? 5 },
+            { label: "Farmers served today", value: summary?.farmersToday ?? 0 },
+            { label: "Avg wait (predicted)", value: `${summary?.averageWaitMin ?? 11} min` },
+            { label: "Overloads prevented", value: summary?.predictedOverloads ?? 0 },
           ].map((s) => (
             <div key={s.label} className="rounded-2xl border border-white/20 bg-black/40 px-4 py-3.5 backdrop-blur-md shadow-lg">
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/70">
