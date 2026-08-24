@@ -1032,3 +1032,102 @@ export const adminService = {
     };
   },
 };
+
+/**
+ * Government Grievance & Complaint Redressal Service
+ * Connects directly to public.grievances with live realtime sync.
+ */
+export const grievanceService = {
+  list: async (filters?: { status?: string; priority?: string; district?: string }): Promise<Grievance[]> => {
+    let query = supabase.from("grievances").select("*").order("created_at", { ascending: false });
+    if (filters?.status && filters.status !== "all") {
+      query = query.eq("status", filters.status);
+    }
+    if (filters?.priority && filters.priority !== "all") {
+      query = query.eq("priority", filters.priority);
+    }
+    if (filters?.district && filters.district !== "all") {
+      query = query.eq("district", filters.district);
+    }
+    const { data, error } = await query;
+    if (error) throw new Error(`Failed to load grievances: ${error.message}`);
+    return (data || []).map((g) => ({
+      id: g.id,
+      ticketId: g.ticket_id,
+      farmerId: g.farmer_id,
+      farmerName: g.farmer_name,
+      farmerPhone: g.farmer_phone,
+      centreId: g.centre_id,
+      centreName: g.centre_name,
+      district: g.district,
+      category: g.category,
+      subject: g.subject,
+      description: g.description,
+      priority: g.priority,
+      status: g.status,
+      assignedToName: g.assigned_to_name,
+      resolutionNotes: g.resolution_notes,
+      resolvedAt: g.resolved_at,
+      createdAt: g.created_at,
+      updatedAt: g.updated_at,
+    }));
+  },
+
+  updateStatus: async (id: string, status: Grievance["status"], notes?: string) => {
+    const updates: Record<string, any> = { status, updated_at: new Date().toISOString() };
+    if (notes) updates.resolution_notes = notes;
+    if (status === "resolved") updates.resolved_at = new Date().toISOString();
+    const { error } = await supabase.from("grievances").update(updates).eq("id", id);
+    if (error) throw new Error(`Failed to update grievance: ${error.message}`);
+  },
+
+  assign: async (id: string, assignedToName: string) => {
+    const { error } = await supabase.from("grievances").update({
+      assigned_to_name: assignedToName,
+      status: "pending",
+      updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    if (error) throw new Error(`Failed to assign grievance: ${error.message}`);
+  },
+
+  escalate: async (id: string, assignedToName = "State Vigilance & Quality Directorate") => {
+    const { error } = await supabase.from("grievances").update({
+      assigned_to_name: assignedToName,
+      status: "escalated",
+      priority: "critical",
+      updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    if (error) throw new Error(`Failed to escalate grievance: ${error.message}`);
+  },
+
+  resolve: async (id: string, resolutionNotes: string) => {
+    const { error } = await supabase.from("grievances").update({
+      status: "resolved",
+      resolution_notes: resolutionNotes,
+      resolved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    if (error) throw new Error(`Failed to resolve grievance: ${error.message}`);
+  },
+
+  create: async (params: Omit<Grievance, "id" | "createdAt" | "updatedAt">) => {
+    const { data, error } = await supabase.from("grievances").insert({
+      ticket_id: params.ticketId,
+      farmer_id: params.farmerId,
+      farmer_name: params.farmerName,
+      farmer_phone: params.farmerPhone,
+      centre_id: params.centreId,
+      centre_name: params.centreName,
+      district: params.district,
+      category: params.category,
+      subject: params.subject,
+      description: params.description,
+      priority: params.priority || "medium",
+      status: params.status || "new",
+      assigned_to_name: params.assignedToName,
+    }).select().single();
+    if (error) throw new Error(`Failed to create grievance: ${error.message}`);
+    return data;
+  },
+};
+

@@ -165,3 +165,38 @@ export interface DistrictSummary {
   averageWaitMin: number;
   predictedOverloads: number;
 }
+
+export interface Grievance {
+  id: string;
+  ticketId?: string;
+  farmerId: string;
+  farmerName: string;
+  farmerPhone?: string;
+  centreId?: string;
+  centreName?: string;
+  district: string;
+  category: "weighing" | "delay" | "payment" | "quality_rejection" | "staff_conduct" | "portal_bug" | "other";
+  subject: string;
+  description: string;
+  priority: "critical" | "high" | "medium" | "low";
+  status: "new" | "pending" | "escalated" | "resolved" | "reopened";
+  assignedToName?: string;
+  resolutionNotes?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DistrictPerformance {
+  district: string;
+  totalCentres: number;
+  activeCentres: number;
+  farmersServed: number;
+  procuredQuintals: number;
+  averageWaitMin: number;
+  utilizationPct: number;
+  openGrievances: number;
+  resolvedGrievances: number;
+  status: "optimal" | "strained" | "critical";
+}
+
