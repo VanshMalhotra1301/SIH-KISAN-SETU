@@ -68,7 +68,8 @@ BEGIN
 
   -- Mark the best optimal centre as recommended
   IF v_best_centre_id IS NOT NULL THEN
-    UPDATE public.procurement_centres SET recommended = (id = v_best_centre_id);
+    UPDATE public.procurement_centres SET recommended = false WHERE id != v_best_centre_id;
+    UPDATE public.procurement_centres SET recommended = true WHERE id = v_best_centre_id;
   END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
