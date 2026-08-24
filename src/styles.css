@@ -276,3 +276,24 @@
 @utility animate-blip {
   animation: ks-blip 2s ease-in-out infinite;
 }
+
+@keyframes ks-marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@utility animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: ks-marquee 30s linear infinite;
+
+  &:hover {
+    animation-play-state: paused;
+  }
+}
+
+
