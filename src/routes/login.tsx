@@ -54,7 +54,7 @@ export function LoginPage() {
   const [signupPassword, setSignupPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
-  const [district, setDistrict] = useState("Karnal");
+  const [district, setDistrict] = useState("");
   const [village, setVillage] = useState("");
   const [crop, setCrop] = useState("Wheat");
   const [quantity, setQuantity] = useState("120");
@@ -122,9 +122,9 @@ export function LoginPage() {
           fullName,
           fullNameHi: fullName,
           phone,
-          district: district || "Karnal",
-          village: village || "Bahadurgarh",
-          villageHi: village || "बहादुरगढ़",
+          district: district.trim(),
+          village: village.trim(),
+          villageHi: village.trim(),
           crop,
           cropHi: crop === "Wheat" ? "गेहूँ" : crop === "Paddy" ? "धान" : crop === "Mustard" ? "सरसों" : "चना",
           quantityQuintals: Number(quantity) || 120,
@@ -137,7 +137,7 @@ export function LoginPage() {
           fullName,
           fullNameHi: fullName,
           phone,
-          district: district || "Karnal",
+          district: district.trim(),
           centreId: selectedCentreId || centres[0]?.id || "",
         } as SignUpOperatorPayload;
       } else if (signupRole === "district_admin") {
@@ -148,7 +148,7 @@ export function LoginPage() {
           fullName,
           fullNameHi: fullName,
           phone,
-          district: district || "Karnal",
+          district: district.trim(),
           department: department || "District Collectorate / Agriculture Office",
         } as SignUpAdminPayload;
       } else {
@@ -508,7 +508,7 @@ export function LoginPage() {
                     required
                     value={district}
                     onChange={(e) => setDistrict(e.target.value)}
-                    placeholder="Karnal"
+                    placeholder="e.g. District Name"
                     className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
                   />
                 </div>
@@ -525,7 +525,7 @@ export function LoginPage() {
                         required
                         value={village}
                         onChange={(e) => setVillage(e.target.value)}
-                        placeholder="Bahadurgarh"
+                        placeholder="e.g. Village Name"
                         className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
                       />
                     </div>
@@ -595,7 +595,7 @@ export function LoginPage() {
                       required
                       value={department}
                       onChange={(e) => setDepartment(e.target.value)}
-                      placeholder="e.g. Deputy Director of Agriculture, Karnal"
+                      placeholder="e.g. Deputy Director of Agriculture"
                       className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
                     />
                   </div>

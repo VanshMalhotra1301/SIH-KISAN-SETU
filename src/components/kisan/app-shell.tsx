@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 const allNavItems = [
   { to: "/", label: "Overview", labelHi: "परिचय", roles: ["farmer", "centre_operator", "district_admin", "super_admin", "guest"] },
   { to: "/farmer", label: "Farmer Portal", labelHi: "किसान पोर्टल", roles: ["farmer", "super_admin"] },
-  { to: "/centre", label: "Mandi Centre", labelHi: "खरीद केंद्र", roles: ["centre_operator", "super_admin"] },
+  { to: "/centre", label: "Procurement Centre", labelHi: "खरीद केंद्र", roles: ["centre_operator", "super_admin"] },
   { to: "/control-tower", label: "Control Tower", labelHi: "कंट्रोल टावर", roles: ["district_admin", "super_admin"] },
   { to: "/admin", label: "Admin Portal", labelHi: "एडमिन पोर्टल", roles: ["super_admin"] },
   { to: "/login", label: "Portals / Login", labelHi: "लॉगिन / पोर्टल", roles: ["guest"] },

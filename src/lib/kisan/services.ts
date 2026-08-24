@@ -140,7 +140,7 @@ export const farmerService = {
 
     // 3. Create 8-stage procurement timeline
     const timelineSteps = [
-      { step_id: "step-1", label: "Farmer Registration", label_hi: "किसान पंजीकरण", detail: "Verified via PM-KISAN / State Mandi portal", detail_hi: "पीएम-किसान एवं राज्य पोर्टल से सत्यापित", state: "done", timestamp_str: nowTime, sort_order: 1 },
+      { step_id: "step-1", label: "Farmer Registration", label_hi: "किसान पंजीकरण", detail: "Verified via PM-KISAN / State Agri portal", detail_hi: "पीएम-किसान एवं राज्य पोर्टल से सत्यापित", state: "done", timestamp_str: nowTime, sort_order: 1 },
       { step_id: "step-2", label: "Smart Slot Confirmed", label_hi: "स्मार्ट स्लॉट आवंटित", detail: `Booked for ${slotWindow}`, detail_hi: `${slotWindow} के लिए समय आरक्षित`, state: "done", timestamp_str: nowTime, sort_order: 2 },
       { step_id: "step-3", label: "Centre Arrival & Gate Entry", label_hi: "केंद्र आगमन एवं प्रवेश", detail: "Reach centre gate 10 mins before slot window", detail_hi: "अपने स्लॉट से 10 मिनट पहले मुख्य द्वार पर पहुँचें", state: "active", timestamp_str: "", sort_order: 3 },
       { step_id: "step-4", label: "Electronic Weighing", label_hi: "इलेक्ट्रॉनिक तुलाई", detail: "Automated weighbridge tare & gross weight", detail_hi: "स्वचालित धर्मकांटे पर वाहन सहित तुलाई", state: "upcoming", timestamp_str: "", sort_order: 4 },
