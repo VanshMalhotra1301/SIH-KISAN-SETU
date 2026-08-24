@@ -142,11 +142,11 @@ export const farmerService = {
     const timelineSteps = [
       { step_id: "step-1", label: "Farmer Registration", label_hi: "किसान पंजीकरण", detail: "Verified via PM-KISAN / State Mandi portal", detail_hi: "पीएम-किसान एवं राज्य पोर्टल से सत्यापित", state: "done", timestamp_str: nowTime, sort_order: 1 },
       { step_id: "step-2", label: "Smart Slot Confirmed", label_hi: "स्मार्ट स्लॉट आवंटित", detail: `Booked for ${slotWindow}`, detail_hi: `${slotWindow} के लिए समय आरक्षित`, state: "done", timestamp_str: nowTime, sort_order: 2 },
-      { step_id: "step-3", label: "Mandi Arrival & Gate Entry", label_hi: "मंडी आगमन एवं प्रवेश", detail: "Reach mandi gate 10 mins before slot window", detail_hi: "अपने स्लॉट से 10 मिनट पहले मुख्य द्वार पर पहुँचें", state: "active", timestamp_str: "", sort_order: 3 },
+      { step_id: "step-3", label: "Centre Arrival & Gate Entry", label_hi: "केंद्र आगमन एवं प्रवेश", detail: "Reach centre gate 10 mins before slot window", detail_hi: "अपने स्लॉट से 10 मिनट पहले मुख्य द्वार पर पहुँचें", state: "active", timestamp_str: "", sort_order: 3 },
       { step_id: "step-4", label: "Electronic Weighing", label_hi: "इलेक्ट्रॉनिक तुलाई", detail: "Automated weighbridge tare & gross weight", detail_hi: "स्वचालित धर्मकांटे पर वाहन सहित तुलाई", state: "upcoming", timestamp_str: "", sort_order: 4 },
       { step_id: "step-5", label: "Quality Check & FAQ Grading", label_hi: "गुणवत्ता जाँच (FAQ)", detail: "Moisture < 12% & grain purity certification", detail_hi: "नमी 12% से कम एवं मानक गुणवत्ता प्रमाणन", state: "upcoming", timestamp_str: "", sort_order: 5 },
       { step_id: "step-6", label: "Procurement Acceptance", label_hi: "खरीद स्वीकृति", detail: "MSP confirmation voucher generated", detail_hi: "न्यूनतम समर्थन मूल्य (MSP) वाउचर स्वीकृत", state: "upcoming", timestamp_str: "", sort_order: 6 },
-      { step_id: "step-7", label: "J-Form Bill Generation", label_hi: "जे-फॉर्म बिल निर्माण", detail: "Official tax invoice & weighing certificate", detail_hi: "डिजिटल जे-फॉर्म एवं तुलाई प्रमाणपत्र जारी", state: "upcoming", timestamp_str: "", sort_order: 7 },
+      { step_id: "step-7", label: "Digital Invoice Generation", label_hi: "डिजिटल बिल निर्माण", detail: "Official tax invoice & weighing certificate", detail_hi: "डिजिटल बिल एवं तुलाई प्रमाणपत्र जारी", state: "upcoming", timestamp_str: "", sort_order: 7 },
       { step_id: "step-8", label: "DBT Direct Bank Payment", label_hi: "बैंक खाता भुगतान (DBT)", detail: "PFMS Direct Benefit Transfer in 48 hours", detail_hi: "पीएफएमएस द्वारा 48 घंटे में सीधे बैंक खाते में", state: "upcoming", timestamp_str: "", sort_order: 8 },
     ];
 
@@ -525,12 +525,12 @@ export const procurementService = {
       // Return default 8-step structure if no ticket has been initialized yet
       return [
         { id: "step-1", label: "Farmer Registration", labelHi: "किसान पंजीकरण", detail: "Registered & verified in central database", detailHi: "केंद्रीय डेटाबेस में पंजीकृत एवं सत्यापित", state: "done", timestamp: "Ready" },
-        { id: "step-2", label: "Smart Slot Allocation", labelHi: "स्मार्ट स्लॉट आवंटन", detail: "Select optimal mandi centre and book slot", detailHi: "नजदीकी मंडी का चयन करें एवं समय आरक्षित करें", state: "upcoming" },
-        { id: "step-3", label: "Mandi Arrival & Gate Entry", labelHi: "मंडी आगमन एवं प्रवेश", detail: "Reach gate before designated slot window", detailHi: "निर्धारित समय से पूर्व मुख्य द्वार पर पहुँचें", state: "upcoming" },
+        { id: "step-2", label: "Smart Slot Allocation", labelHi: "स्मार्ट स्लॉट आवंटन", detail: "Select optimal procurement centre and book slot", detailHi: "नजदीकी केंद्र का चयन करें एवं समय आरक्षित करें", state: "upcoming" },
+        { id: "step-3", label: "Centre Arrival & Gate Entry", labelHi: "केंद्र आगमन एवं प्रवेश", detail: "Reach gate before designated slot window", detailHi: "निर्धारित समय से पूर्व मुख्य द्वार पर पहुँचें", state: "upcoming" },
         { id: "step-4", label: "Electronic Weighing", labelHi: "इलेक्ट्रॉनिक तुलाई", detail: "Automated digital weighbridge tare & gross weight", detailHi: "स्वचालित धर्मकांटे पर वाहन सहित तुलाई", state: "upcoming" },
         { id: "step-5", label: "Quality Check & FAQ Grading", labelHi: "गुणवत्ता जाँच (FAQ)", detail: "Moisture & grain purity certification", detailHi: "नमी एवं अनाज गुणवत्ता मानक प्रमाणन", state: "upcoming" },
         { id: "step-6", label: "Procurement Acceptance", labelHi: "खरीद स्वीकृति", detail: "MSP confirmation voucher approved", detailHi: "न्यूनतम समर्थन मूल्य (MSP) वाउचर स्वीकृत", state: "upcoming" },
-        { id: "step-7", label: "J-Form Bill Generation", labelHi: "जे-फॉर्म बिल निर्माण", detail: "Official mandi tax invoice & weighing slip", detailHi: "डिजिटल जे-फॉर्म एवं तुलाई प्रमाणपत्र जारी", state: "upcoming" },
+        { id: "step-7", label: "Digital Invoice Generation", labelHi: "डिजिटल बिल निर्माण", detail: "Official centre tax invoice & weighing slip", detailHi: "डिजिटल बिल एवं तुलाई प्रमाणपत्र जारी", state: "upcoming" },
         { id: "step-8", label: "DBT Direct Bank Payment", labelHi: "बैंक खाता भुगतान (DBT)", detail: "Direct Benefit Transfer to registered bank account", detailHi: "पीएफएमएस द्वारा सीधे बैंक खाते में भुगतान", state: "upcoming" },
       ];
     }

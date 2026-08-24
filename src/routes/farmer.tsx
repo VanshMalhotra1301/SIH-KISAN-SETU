@@ -25,11 +25,11 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/farmer")({
   head: () => ({
     meta: [
-      { title: "Farmer Portal — Smart Mandi, Slots, Live Queue & Payments | KISAN SETU" },
+      { title: "Farmer Portal — Procurement Centres, Slots, Live Queue & Payments | KISAN SETU" },
       {
         name: "description",
         content:
-          "Voice-enabled farmer procurement platform: Smart mandi allocation, virtual token tracking, timeline, and direct MSP payment updates.",
+          "Voice-enabled farmer procurement platform: Smart centre allocation, virtual token tracking, timeline, and direct MSP payment updates.",
       },
     ],
   }),
@@ -113,7 +113,7 @@ function FarmerPortal() {
       if (ticket) {
         text += ` Your queue token is ${ticket.token}. There are ${ticket.farmersAhead} farmers ahead of you with an estimated wait of ${ticket.etaMinutes} minutes.`;
       } else {
-        text += ` ${activeCentre ? activeCentre.name : "Centre"} is your optimal procurement mandi. Book your slot now.`;
+        text += ` ${activeCentre ? activeCentre.name : "Centre"} is your optimal procurement centre. Book your slot now.`;
       }
     }
     speak(text, language);
@@ -300,7 +300,7 @@ function FarmerPortal() {
         <div className="flex gap-2 overflow-x-auto rounded-2xl bg-muted p-1 text-xs font-bold">
           {[
             { id: "home", label: hi ? "🏠 मुख्य पृष्ठ" : "🏠 Overview" },
-            { id: "centres", label: hi ? "🏢 मंडी केंद्र" : "🏢 Mandi Finder" },
+            { id: "centres", label: hi ? "🏢 खरीद केंद्र" : "🏢 Centre Finder" },
             { id: "queue", label: hi ? "🎫 कतार स्थिति" : "🎫 Virtual Queue" },
             { id: "timeline", label: hi ? "📋 खरीद चरण" : "📋 Timeline" },
             { id: "payments", label: hi ? "💰 बैंक भुगतान" : "💰 Payments" },
@@ -351,7 +351,7 @@ function FarmerPortal() {
 
                   <div className="rounded-2xl bg-leaf-soft/60 p-4">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-leaf">
-                      {hi ? "निर्धारित खरीद केंद्र" : "Allocated Procurement Mandi"}
+                      {hi ? "निर्धारित खरीद केंद्र" : "Allocated Procurement Centre"}
                     </p>
                     <p className="mt-1 font-display text-xl font-extrabold text-navy">
                       {hi ? activeCentre?.nameHi : activeCentre?.name}
@@ -406,7 +406,7 @@ function FarmerPortal() {
                     onClick={() => setActiveTab("centres")}
                     className="rounded-xl border border-border bg-card px-5 py-3.5 text-sm font-bold text-navy hover:bg-muted focus-ring"
                   >
-                    🏢 {hi ? "मंडी केंद्र सूची देखें" : "Explore Mandi Centres"}
+                    🏢 {hi ? "केंद्र सूची देखें" : "Explore Procurement Centres"}
                   </button>
                 </div>
               </section>
@@ -444,7 +444,7 @@ function FarmerPortal() {
               <div>
                 <SectionLabel>{hi ? "निकटतम अधिकृत केंद्र" : "Authorized Procurement Centres"}</SectionLabel>
                 <h2 className="mt-1 font-display text-2xl font-extrabold text-navy">
-                  {hi ? "आपके क्षेत्र के खरीद केंद्र" : "Smart Mandi Allocation"}
+                  {hi ? "आपके क्षेत्र के खरीद केंद्र" : "Smart Centre Allocation"}
                 </h2>
               </div>
               <PrototypeBadge tone="light" />
@@ -456,6 +456,13 @@ function FarmerPortal() {
             </p>
 
             <div className="space-y-4 pt-2">
+              {centres.length === 0 && (
+                <div className="rounded-xl border border-border bg-card p-8 text-center">
+                  <p className="text-sm font-semibold text-muted-foreground">
+                    {hi ? "आपके क्षेत्र में कोई खरीद केंद्र उपलब्ध नहीं है।" : "No procurement centres are currently available in your area."}
+                  </p>
+                </div>
+              )}
               {centres.map((c) => {
                 const health = centreHealth(c.capacityUsedPct);
                 const isSelected = activeCentre?.id === c.id;
@@ -519,7 +526,7 @@ function FarmerPortal() {
                     {c.recommended && (
                       <div className="mt-4 rounded-xl bg-leaf-soft p-3.5">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-leaf">
-                          {hi ? "यह केंद्र क्यों चुनें? (लाइव एआई विश्लेषण)" : "Why Choose This Mandi? (Live AI Analysis)"}
+                          {hi ? "यह केंद्र क्यों चुनें? (लाइव एआई विश्लेषण)" : "Why Choose This Centre? (Live AI Analysis)"}
                         </p>
                         <ul className="mt-2 space-y-1.5">
                           <li className="text-xs font-semibold text-navy flex items-center gap-1.5">
@@ -553,7 +560,7 @@ function FarmerPortal() {
                         }}
                         className="flex-1 rounded-xl bg-navy py-2.5 text-xs font-bold text-primary-foreground focus-ring"
                       >
-                        ✓ {hi ? "इस केंद्र पर स्लॉट बुक करें" : "Book Slot at This Mandi"}
+                        ✓ {hi ? "इस केंद्र पर स्लॉट बुक करें" : "Book Slot at This Centre"}
                       </button>
                     </div>
                   </article>
@@ -615,7 +622,7 @@ function FarmerPortal() {
                     <p className="text-xs font-semibold text-navy leading-relaxed">
                       💡 {hi
                         ? "कतार में आपकी जगह सुरक्षित है। अपने स्लॉट समय से 10 मिनट पहले मंडी के मुख्य द्वार पर पहुँचें।"
-                        : "Your place in the virtual queue is secured in the central database. Please arrive at the mandi gate 10 minutes prior to your window."}
+                        : "Your place in the virtual queue is secured in the central database. Please arrive at the centre gate 10 minutes prior to your window."}
                     </p>
                   </div>
 
@@ -624,7 +631,7 @@ function FarmerPortal() {
                       type="button"
                       onClick={() => {
                         const centreName = activeCentre ? (hi ? activeCentre.nameHi : activeCentre.name) : (hi ? "खरीद केंद्र" : "Procurement Centre");
-                        alert(hi ? `मंडी: ${centreName}` : `Mandi: ${centreName}`);
+                        alert(hi ? `केंद्र: ${centreName}` : `Centre: ${centreName}`);
                       }}
                       className="rounded-xl bg-navy py-3 text-xs font-bold text-primary-foreground focus-ring"
                     >
@@ -772,10 +779,10 @@ function FarmerPortal() {
 
               <button
                 type="button"
-                onClick={() => alert(hi ? "जे-फॉर्म वाउचर रसीद डाउनलोड हो रही है..." : "Downloading official digital J-Form receipt...")}
+                onClick={() => alert(hi ? "डिजिटल बिल रसीद डाउनलोड हो रही है..." : "Downloading official digital invoice receipt...")}
                 className="w-full rounded-xl bg-navy py-3 text-xs font-bold text-primary-foreground focus-ring"
               >
-                📄 {hi ? "डिजिटल जे-फॉर्म रसीद डाउनलोड करें" : "Download Digital J-Form Voucher"}
+                📄 {hi ? "डिजिटल बिल रसीद डाउनलोड करें" : "Download Digital Invoice Voucher"}
               </button>
             </div>
           </section>

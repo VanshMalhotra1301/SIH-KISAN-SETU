@@ -118,7 +118,7 @@ export function VoiceAssistant({ onNavigateTab, onExecuteAction }: VoiceAssistan
     idle: {
       en: "Tap to Speak",
       hi: "बोलकर पूछें",
-      subtitleEn: "Ask about your turn, mandi, payment or slot",
+      subtitleEn: "Ask about your turn, centre, payment or slot",
       subtitleHi: "अपनी बारी, मंडी केंद्र, भुगतान या स्लॉट के बारे में पूछें",
     },
     listening: {

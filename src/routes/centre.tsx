@@ -22,7 +22,7 @@ export const Route = createFileRoute("/centre")({
       {
         name: "description",
         content:
-          "Official Mandi Operator workstation for live queue management, electronic weighbridge recording, FAQ quality grading, and digital J-Form MSP issuance.",
+          "Official Procurement Centre Operator workstation for live queue management, electronic weighbridge recording, FAQ quality grading, and digital J-Form MSP issuance.",
       },
     ],
   }),
@@ -97,6 +97,7 @@ function CentrePage() {
 
   // Filter queue rows for active centre
   const centreTickets = useMemo(() => {
+    if (!activeCentre) return [];
     return queueRows.filter((row) => {
       // 1. Strict centre isolation: Only show tickets for this active centre
       if (row.centreId && row.centreId !== activeCentre.id) return false;
@@ -118,7 +119,7 @@ function CentrePage() {
 
       return true;
     });
-  }, [queueRows, activeCentre.id, searchQuery, statusFilter]);
+  }, [queueRows, activeCentre?.id, searchQuery, statusFilter]);
 
   // Active queue vs completed for this centre
   const activeInQueue = useMemo(
@@ -132,6 +133,7 @@ function CentrePage() {
 
   // Counter management
   const handleCounterChange = async (delta: number) => {
+    if (!activeCentre) return;
     const next = Math.max(1, Math.min(activeCentre.totalCounters, activeCentre.activeCounters + delta));
     if (next !== activeCentre.activeCounters) {
       await operatorUpdateCounters(activeCentre.id, next);
@@ -200,7 +202,7 @@ function CentrePage() {
         setSuccessBanner(hi ? `🔬 गुणवत्ता परीक्षण सफल: ग्रेड ${qualityGradeInput}` : `🔬 Quality inspected: Grade ${qualityGradeInput}`);
         setModalStage("complete");
       } else if (action === "complete" || action === "accept") {
-        setSuccessBanner(hi ? `🎉 खरीद पूर्ण! जे-फॉर्म: ${res.j_form_no} | भुगतान ₹${res.gross_amount.toLocaleString("en-IN")} कतारबद्ध` : `🎉 Completed! J-Form: ${res.j_form_no} | Payment ₹${res.gross_amount.toLocaleString("en-IN")} queued`);
+        setSuccessBanner(hi ? `🎉 खरीद पूर्ण! बिल: ${res.j_form_no} | भुगतान ₹${res.gross_amount.toLocaleString("en-IN")} कतारबद्ध` : `🎉 Completed! Invoice: ${res.j_form_no} | Payment ₹${res.gross_amount.toLocaleString("en-IN")} queued`);
         setSelectedTicket(null);
       } else if (action === "reject") {
         setSuccessBanner(hi ? `⚠️ टोकन ${selectedTicket.token} अस्वीकृत किया गया` : `⚠️ Token ${selectedTicket.token} rejected`);
@@ -218,7 +220,7 @@ function CentrePage() {
 
   // Export Daily Register to CSV
   const handleExportCSV = () => {
-    const headers = ["Token", "J-Form No", "Farmer Name", "Village", "Crop", "Quantity (Qtl)", "Actual Weighed (Qtl)", "Quality Grade", "Status", "Slot Window"];
+    const headers = ["Token", "Invoice No", "Farmer Name", "Village", "Crop", "Quantity (Qtl)", "Actual Weighed (Qtl)", "Quality Grade", "Status", "Slot Window"];
     const rows = completedToday.map((r) => [
       r.token,
       r.jFormNo || "—",
@@ -236,7 +238,7 @@ function CentrePage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `KisanSetu_Mandi_${activeCentre.code}_Daily_Register.csv`);
+    link.setAttribute("download", `KisanSetu_Centre_${activeCentre.code}_Daily_Register.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -283,7 +285,7 @@ function CentrePage() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-leaf-soft px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-leaf">
               <span className="size-2 rounded-full bg-leaf animate-blip" />
-              {hi ? "अधिकृत खरीद केंद्र वर्कस्टेशन" : "Official Mandi Workstation"}
+              {hi ? "अधिकृत खरीद केंद्र वर्कस्टेशन" : "Official Procurement Centre Workstation"}
             </span>
             <Pill tone="navy">
               {hi ? `ऑपरेटर: ${user?.fullName || "स्टाफ़"}` : `In-Charge: ${user?.fullName || "Staff"}`}
@@ -299,7 +301,7 @@ function CentrePage() {
           </p>
         </div>
 
-        {/* Counter & Mandi Selector Controls */}
+        {/* Counter & Centre Selector Controls */}
         <div className="flex flex-wrap items-center gap-3">
           {centres.length > 1 && (
             <select
@@ -445,7 +447,7 @@ function CentrePage() {
               : "bg-muted/60 text-navy hover:bg-muted"
           )}
         >
-          📜 {hi ? "जे-फॉर्म एवं पूर्ण खरीद" : "J-Form Register"} ({completedToday.length})
+          📜 {hi ? "बिल एवं पूर्ण खरीद" : "Invoice Register"} ({completedToday.length})
         </button>
         <button
           type="button"
@@ -587,7 +589,7 @@ function CentrePage() {
                                 onClick={() => openTicketModal(row, "complete")}
                                 className="rounded-xl bg-gradient-leaf px-3 py-1.5 text-xs font-bold text-primary-foreground hover:scale-105 transition-transform focus-ring"
                               >
-                                ✓ {hi ? "जे-फॉर्म जारी करें" : "Issue J-Form"}
+                                ✓ {hi ? "बिल जारी करें" : "Issue Invoice"}
                               </button>
                             )}
                             {(row.status === "done" || row.status === "accepted") && (
@@ -596,7 +598,7 @@ function CentrePage() {
                                 onClick={() => openTicketModal(row, "complete")}
                                 className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-muted-foreground hover:text-navy focus-ring"
                               >
-                                📜 {row.jFormNo || (hi ? "विवरण देखें" : "View J-Form")}
+                                📜 {row.jFormNo || (hi ? "विवरण देखें" : "View Invoice")}
                               </button>
                             )}
                           </td>
@@ -619,7 +621,7 @@ function CentrePage() {
               <div>
                 <SectionLabel>{hi ? "दैनिक खरीद रजिस्टर" : "Daily Procurement Register"}</SectionLabel>
                 <h3 className="mt-1 font-display text-xl font-extrabold text-navy">
-                  {hi ? "आज के सभी स्वीकृत जे-फॉर्म एवं डीबीटी रिकॉर्ड" : "All Approved J-Forms & DBT Records Today"}
+                  {hi ? "आज के सभी स्वीकृत बिल एवं डीबीटी रिकॉर्ड" : "All Approved Invoices & DBT Records Today"}
                 </h3>
               </div>
               <button
@@ -635,7 +637,7 @@ function CentrePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/60 text-left text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
-                    <th className="px-4 py-3">{hi ? "जे-फॉर्म संख्या" : "J-Form No"}</th>
+                    <th className="px-4 py-3">{hi ? "बिल संख्या" : "Invoice No"}</th>
                     <th className="px-4 py-3">{hi ? "टोकन" : "Token"}</th>
                     <th className="px-4 py-3">{hi ? "किसान का नाम" : "Farmer Name"}</th>
                     <th className="px-4 py-3">{hi ? "फसल" : "Crop"}</th>
@@ -774,7 +776,7 @@ function CentrePage() {
                   onClick={() => setModalStage("complete")}
                   className={cn("py-1.5 rounded-lg transition-colors", modalStage === "complete" ? "bg-leaf text-primary-foreground" : "text-primary-foreground/70")}
                 >
-                  4. {hi ? "जे-फॉर्म" : "J-Form"}
+                  4. {hi ? "बिल" : "Invoice"}
                 </button>
               </div>
             </div>
@@ -943,16 +945,16 @@ function CentrePage() {
                       onClick={() => handleExecuteAction("grade")}
                       className="w-full rounded-2xl bg-gradient-leaf py-3.5 text-sm font-extrabold text-primary-foreground shadow-md hover:scale-[1.01] transition-transform focus-ring"
                     >
-                      {isSubmitting ? "Processing..." : hi ? "✓ गुणवत्ता स्वीकृत करें एवं जे-फॉर्म जनरेट करें" : "✓ Approve Quality & Proceed to J-Form"}
+                      {isSubmitting ? "Processing..." : hi ? "✓ गुणवत्ता स्वीकृत करें एवं बिल जनरेट करें" : "✓ Approve Quality & Proceed to Invoice"}
                     </button>
                   )}
                 </div>
               )}
 
-              {/* STAGE 4: J-FORM & DBT COMPLETION */}
+              {/* STAGE 4: INVOICE & DBT COMPLETION */}
               {modalStage === "complete" && (
                 <div className="space-y-4">
-                  {/* Digital J-Form Receipt Preview */}
+                  {/* Digital Invoice Receipt Preview */}
                   <div className="rounded-2xl border-2 border-border bg-muted/40 p-5 space-y-3 font-sans">
                     <div className="flex items-center justify-between border-b border-border pb-2">
                       <div>

@@ -15,7 +15,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "KISAN SETU is a predictive procurement platform for farmers, mandi centres and district officers: smart centre finder, smart slots, virtual queue and AI congestion control.",
+          "KISAN SETU is a predictive procurement platform for farmers, procurement centres and district officers: smart centre finder, smart slots, virtual queue and AI congestion control.",
       },
       { property: "og:title", content: "KISAN SETU — Predictive Crop Procurement" },
       {
@@ -62,10 +62,10 @@ function Landing() {
   return (
     <PageShell className="pt-0">
       <section className="relative mt-6 overflow-hidden rounded-3xl bg-black px-5 py-12 text-primary-foreground sm:px-10 sm:py-16 shadow-2xl">
-        {/* Real authentic mandi dawn image — true colors, no blur or blueish tint */}
+        {/* Real authentic dawn image — true colors, no blur or blueish tint */}
         <img
           src={heroImage}
-          alt="Farmers at a grain procurement mandi at dawn"
+          alt="Farmers at a grain procurement centre at dawn"
           className="pointer-events-none absolute inset-0 size-full object-cover object-center"
           loading="eager"
         />

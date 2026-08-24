@@ -149,12 +149,21 @@ function ControlTowerPage() {
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.6fr_1fr]">
         {/* Left: Map + Forecast */}
         <div className="space-y-6">
-          <section>
+          <section className="relative">
             <SectionLabel tone="dark">{hi ? "जिला केंद्र स्वास्थ्य" : "District centre health"}</SectionLabel>
             <h2 className="mt-2 font-display text-xl font-extrabold text-command-fg">
               {hi ? "लाइव सेंटर मैप" : "Live centre map"}
             </h2>
             <div className="mt-4">
+              {centres.length === 0 && (
+                <div className="absolute inset-x-0 top-1/2 z-10 flex -translate-y-1/2 justify-center px-4">
+                  <div className="rounded-xl border border-command-line bg-command-panel/80 p-6 text-center backdrop-blur-md">
+                    <p className="text-sm font-semibold text-command-muted">
+                      {hi ? "आपके अधिकार क्षेत्र में कोई खरीद केंद्र उपलब्ध नहीं है।" : "No procurement centres are configured in your jurisdiction."}
+                    </p>
+                  </div>
+                </div>
+              )}
               <DistrictMap centres={centres} district={userDistrict} />
             </div>
           </section>
@@ -266,7 +275,7 @@ function ControlTowerPage() {
                 <p className="mt-2 text-sm font-semibold text-command-fg">
                   {hi
                     ? "सभी केंद्र सामान्य परिचालन मापदंडों में हैं। कोई सक्रिय चेतावनी नहीं।"
-                    : `All ${centres.length} mandi centres operating within safe threshold capacity (sub-85%). Continuous ML monitoring active.`}
+                    : `All ${centres.length} procurement centres operating within safe threshold capacity (sub-85%). Continuous ML monitoring active.`}
                 </p>
               </div>
             )}
