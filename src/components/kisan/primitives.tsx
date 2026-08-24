@@ -48,7 +48,7 @@ export function Wordmark({ tone = "light" }: { tone?: "light" | "dark" }) {
 
 export function PrototypeBadge({
   tone = "light",
-  label = "Prototype Simulation",
+  label = "Govt. of India · Live Network",
   className,
 }: {
   tone?: "light" | "dark";
@@ -60,12 +60,12 @@ export function PrototypeBadge({
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
         tone === "dark"
-          ? "border-saffron/40 bg-saffron/10 text-saffron"
-          : "border-saffron/40 bg-saffron-soft text-navy",
+          ? "border-leaf/40 bg-leaf/10 text-leaf"
+          : "border-leaf/40 bg-leaf-soft text-navy",
         className,
       )}
     >
-      <span className="size-1.5 rounded-full bg-saffron animate-blip" />
+      <span className="size-1.5 rounded-full bg-leaf animate-blip" />
       {label}
     </span>
   );

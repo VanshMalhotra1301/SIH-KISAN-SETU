@@ -2,19 +2,33 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { PrototypeBadge, Wordmark } from "@/components/kisan/primitives";
+import { useAuth } from "@/hooks/use-auth";
 import { useKisan } from "@/lib/kisan/store";
 import { cn } from "@/lib/utils";
 
-const nav = [
-  { to: "/", label: "Overview", labelHi: "परिचय" },
-  { to: "/farmer", label: "Farmer", labelHi: "किसान" },
-  { to: "/centre", label: "Centre", labelHi: "केंद्र" },
-  { to: "/control-tower", label: "Control Tower", labelHi: "कंट्रोल टावर" },
+const allNavItems = [
+  { to: "/", label: "Overview", labelHi: "परिचय", roles: ["farmer", "centre_operator", "district_admin", "super_admin", "guest"] },
+  { to: "/farmer", label: "Farmer Portal", labelHi: "किसान पोर्टल", roles: ["farmer", "super_admin"] },
+  { to: "/centre", label: "Mandi Centre", labelHi: "खरीद केंद्र", roles: ["centre_operator", "super_admin"] },
+  { to: "/control-tower", label: "Control Tower", labelHi: "कंट्रोल टावर", roles: ["district_admin", "super_admin"] },
+  { to: "/login", label: "Portals / Login", labelHi: "लॉगिन / पोर्टल", roles: ["guest"] },
 ] as const;
+
+const roleBadgeMap = {
+  farmer: { label: "Farmer", labelHi: "किसान", icon: "🌾", tone: "leaf" },
+  centre_operator: { label: "Centre", labelHi: "केंद्र", icon: "🏢", tone: "navy" },
+  district_admin: { label: "Admin", labelHi: "प्रशासन", icon: "🛰️", tone: "saffron" },
+  super_admin: { label: "Super Admin", labelHi: "सुपर एडमिन", icon: "🏛️", tone: "navy" },
+} as const;
 
 export function TopBar({ tone = "light" }: { tone?: "light" | "dark" }) {
   const { language, toggleLanguage } = useKisan();
+  const { user, role, logout } = useAuth();
   const hi = language === "hi";
+
+  const badge = role ? roleBadgeMap[role] : null;
+  const currentRole = role || "guest";
+  const visibleNav = allNavItems.filter((item) => (item.roles as readonly string[]).includes(currentRole));
 
   return (
     <header
@@ -28,7 +42,7 @@ export function TopBar({ tone = "light" }: { tone?: "light" | "dark" }) {
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-3 px-4 sm:px-6">
         <Wordmark tone={tone} />
         <nav className="ml-auto hidden items-center gap-1 md:flex">
-          {nav.map((item) => (
+          {visibleNav.map((item) => (
             <Link
               key={item.to}
               to={item.to}
@@ -49,11 +63,48 @@ export function TopBar({ tone = "light" }: { tone?: "light" | "dark" }) {
             </Link>
           ))}
         </nav>
+
+        {/* User Role Badge / Login Button */}
+        {user ? (
+          <div className="flex items-center gap-2">
+            <Link
+              to="/login"
+              className={cn(
+                "hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold transition-transform hover:scale-105 sm:inline-flex",
+                tone === "dark"
+                  ? "border-command-line bg-command-panel text-cyan-signal"
+                  : "border-leaf/30 bg-leaf-soft text-navy",
+              )}
+            >
+              <span>{badge?.icon}</span>
+              <span>{hi ? badge?.labelHi : badge?.label}</span>
+            </Link>
+            <button
+              type="button"
+              onClick={logout}
+              title="Sign Out"
+              className={cn(
+                "rounded-lg p-1.5 text-xs font-bold transition-colors",
+                tone === "dark" ? "text-command-muted hover:text-danger" : "text-muted-foreground hover:text-danger",
+              )}
+            >
+              🚪
+            </button>
+          </div>
+        ) : (
+          <Link
+            to="/login"
+            className="rounded-lg bg-navy px-3 py-1.5 text-xs font-bold text-primary-foreground focus-ring"
+          >
+            {hi ? "लॉगिन" : "Sign In"}
+          </Link>
+        )}
+
         <button
           type="button"
           onClick={toggleLanguage}
           className={cn(
-            "ml-auto flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-bold focus-ring md:ml-2",
+            "ml-auto flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-bold focus-ring md:ml-0",
             tone === "dark"
               ? "border-command-line text-command-fg"
               : "border-border text-navy",
@@ -64,10 +115,13 @@ export function TopBar({ tone = "light" }: { tone?: "light" | "dark" }) {
           <span className="opacity-30">/</span>
           <span className={cn(!hi ? "text-leaf" : "opacity-50")}>EN</span>
         </button>
-        <PrototypeBadge tone={tone} className="hidden sm:inline-flex" />
+
+        <PrototypeBadge tone={tone} className="hidden lg:inline-flex" />
       </div>
+
+      {/* Mobile nav */}
       <nav className="flex gap-1 overflow-x-auto border-t px-3 py-2 md:hidden">
-        {nav.map((item) => (
+        {visibleNav.map((item) => (
           <Link
             key={item.to}
             to={item.to}
@@ -124,7 +178,7 @@ export function SiteFooter({ tone = "light" }: { tone?: "light" | "dark" }) {
           </p>
         </div>
         <p className={cn("text-xs", tone === "dark" ? "text-command-muted" : "text-muted-foreground")}>
-          Smart India Hackathon 2026 · PS 26032 · All figures are prototype simulation data
+          Smart India Hackathon 2026 · PS 26032 · Connected to Supabase Live Procurement Cloud
         </p>
       </div>
     </footer>

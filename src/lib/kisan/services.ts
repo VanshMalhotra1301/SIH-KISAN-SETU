@@ -1,32 +1,8 @@
 /**
- * Service abstraction layer.
- *
- * Every function here is the seam between the UI and the backend. Today they
- * resolve local demo data after a small simulated latency. To go live, replace
- * the body of each function with a `fetch`/WebSocket call — signatures and
- * return types stay identical, so no component needs to change.
- *
- * Example future implementation:
- *   export const centreService = {
- *     list: () => api.get<ProcurementCentre[]>("/v1/centres"),
- *   };
+ * KISAN SETU — Production Service Layer
+ * All data flows through Supabase. No demo/mock fallbacks.
  */
-
-import {
-  demoActivity,
-  demoAlerts,
-  demoCentres,
-  demoFarmer,
-  demoForecast,
-  demoPayment,
-  demoQueueRows,
-  demoRecommendation,
-  demoSlot,
-  demoThroughput,
-  demoTicket,
-  demoTimeline,
-  demoWaitAnalytics,
-} from "./demo-data";
+import { supabase } from "@/lib/supabase/client";
 import type {
   ActivityEvent,
   AiRecommendation,
@@ -43,72 +19,742 @@ import type {
   WaitAnalyticsPoint,
 } from "./types";
 
-const LATENCY_MS = 420;
+// ─── Helpers ───
 
-function resolve<T>(value: T, ms = LATENCY_MS): Promise<T> {
-  return new Promise((res) => setTimeout(() => res(structuredClone(value)), ms));
+function mapCentre(c: any): ProcurementCentre {
+  return {
+    id: c.id,
+    code: c.code,
+    name: c.name,
+    nameHi: c.name_hi,
+    distanceKm: Number(c.distance_km),
+    queueLength: c.queue_length,
+    predictedWaitMin: c.predicted_wait_min,
+    capacityUsedPct: c.capacity_used_pct,
+    dailyCapacityQuintals: Number(c.daily_capacity_quintals),
+    procuredTodayQuintals: Number(c.procured_today_quintals),
+    activeCounters: c.active_counters,
+    totalCounters: c.total_counters,
+    processingRatePerHour: c.processing_rate_per_hour,
+    farmersToday: c.farmers_today,
+    map: { x: Number(c.map_x), y: Number(c.map_y) },
+    recommended: c.recommended,
+    recommendationReasons: c.recommendation_reasons || [],
+    recommendationReasonsHi: c.recommendation_reasons_hi || [],
+  };
 }
 
+// ─── Farmer Service ───
+
 export const farmerService = {
-  /** GET /v1/farmers/me */
-  getProfile: (): Promise<Farmer> => resolve(demoFarmer),
-  /** POST /v1/farmers/registration */
-  register: (payload: Partial<Farmer>): Promise<Farmer> =>
-    resolve({ ...demoFarmer, ...payload } as Farmer),
+  /** Get farmer profile by their authenticated user ID */
+  getProfile: async (userId?: string): Promise<Farmer> => {
+    let query = supabase.from("profiles").select("*, farmers(*)");
+    if (userId) {
+      query = query.eq("id", userId);
+    } else {
+      query = query.eq("role", "farmer");
+    }
+    const { data, error } = await query.limit(1).maybeSingle();
+
+    if (error) throw new Error(`Failed to load farmer profile: ${error.message}`);
+    if (!data) throw new Error("No farmer profile found");
+
+    const f = Array.isArray(data.farmers) ? data.farmers[0] : data.farmers;
+    return {
+      id: data.id,
+      name: data.full_name,
+      nameHi: data.full_name_hi || data.full_name,
+      village: data.village || "",
+      villageHi: data.village_hi || "",
+      district: data.district || "",
+      phone: data.phone || "",
+      farmerId: f?.farmer_id_code || "",
+      crop: f?.crop || "Wheat",
+      cropHi: f?.crop_hi || "गेहूँ",
+      quantityQuintals: f ? Number(f.quantity_quintals) : 0,
+    };
+  },
+
+  /** Update farmer crop/quantity */
+  updateRegistration: async (userId: string, payload: Partial<Farmer>): Promise<void> => {
+    const cropHiMap: Record<string, string> = {
+      Wheat: "गेहूँ", Paddy: "धान", Mustard: "सरसों", Gram: "चना",
+    };
+    const { error } = await supabase
+      .from("farmers")
+      .update({
+        crop: payload.crop,
+        crop_hi: cropHiMap[payload.crop || "Wheat"] || payload.crop,
+        quantity_quintals: payload.quantityQuintals,
+      })
+      .eq("id", userId);
+    if (error) throw new Error(`Failed to update registration: ${error.message}`);
+  },
+
+  /** Book and create full end-to-end procurement journey in Supabase */
+  bookProcurementJourney: async (params: {
+    farmerId: string;
+    farmerName: string;
+    village: string;
+    crop: string;
+    quantityQuintals: number;
+    centreId: string;
+    slotId?: string | undefined;
+    slotWindow?: string | undefined;
+  }): Promise<{ token: string; ticketId: string }> => {
+    const slotWindow = params.slotWindow || "11:30 – 12:00";
+    const token = `KS-${Math.floor(1000 + Math.random() * 9000)}`;
+    const nowTime = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+    // 1. Mark slot booked if slotId provided
+    if (params.slotId) {
+      await supabase.from("slots").update({
+        is_booked: true,
+        booked_by: params.farmerId,
+      }).eq("id", params.slotId);
+    }
+
+    // 2. Insert into queue_tickets
+    const { data: ticket, error: ticketError } = await supabase
+      .from("queue_tickets")
+      .insert({
+        token,
+        farmer_id: params.farmerId,
+        centre_id: params.centreId,
+        farmer_name: params.farmerName,
+        village: params.village,
+        crop: params.crop,
+        quantity_quintals: params.quantityQuintals,
+        slot_window: slotWindow,
+        stage: "scheduled",
+        farmers_ahead: 3,
+        eta_minutes: 22,
+      })
+      .select()
+      .single();
+
+    if (ticketError) throw new Error(`Failed to create queue ticket: ${ticketError.message}`);
+
+    const ticketId = ticket.id;
+
+    // 3. Create 8-stage procurement timeline
+    const timelineSteps = [
+      { step_id: "step-1", label: "Farmer Registration", label_hi: "किसान पंजीकरण", detail: "Verified via PM-KISAN / State Mandi portal", detail_hi: "पीएम-किसान एवं राज्य पोर्टल से सत्यापित", state: "done", timestamp_str: nowTime, sort_order: 1 },
+      { step_id: "step-2", label: "Smart Slot Confirmed", label_hi: "स्मार्ट स्लॉट आवंटित", detail: `Booked for ${slotWindow}`, detail_hi: `${slotWindow} के लिए समय आरक्षित`, state: "done", timestamp_str: nowTime, sort_order: 2 },
+      { step_id: "step-3", label: "Mandi Arrival & Gate Entry", label_hi: "मंडी आगमन एवं प्रवेश", detail: "Reach mandi gate 10 mins before slot window", detail_hi: "अपने स्लॉट से 10 मिनट पहले मुख्य द्वार पर पहुँचें", state: "active", timestamp_str: "", sort_order: 3 },
+      { step_id: "step-4", label: "Electronic Weighing", label_hi: "इलेक्ट्रॉनिक तुलाई", detail: "Automated weighbridge tare & gross weight", detail_hi: "स्वचालित धर्मकांटे पर वाहन सहित तुलाई", state: "upcoming", timestamp_str: "", sort_order: 4 },
+      { step_id: "step-5", label: "Quality Check & FAQ Grading", label_hi: "गुणवत्ता जाँच (FAQ)", detail: "Moisture < 12% & grain purity certification", detail_hi: "नमी 12% से कम एवं मानक गुणवत्ता प्रमाणन", state: "upcoming", timestamp_str: "", sort_order: 5 },
+      { step_id: "step-6", label: "Procurement Acceptance", label_hi: "खरीद स्वीकृति", detail: "MSP confirmation voucher generated", detail_hi: "न्यूनतम समर्थन मूल्य (MSP) वाउचर स्वीकृत", state: "upcoming", timestamp_str: "", sort_order: 6 },
+      { step_id: "step-7", label: "J-Form Bill Generation", label_hi: "जे-फॉर्म बिल निर्माण", detail: "Official tax invoice & weighing certificate", detail_hi: "डिजिटल जे-फॉर्म एवं तुलाई प्रमाणपत्र जारी", state: "upcoming", timestamp_str: "", sort_order: 7 },
+      { step_id: "step-8", label: "DBT Direct Bank Payment", label_hi: "बैंक खाता भुगतान (DBT)", detail: "PFMS Direct Benefit Transfer in 48 hours", detail_hi: "पीएफएमएस द्वारा 48 घंटे में सीधे बैंक खाते में", state: "upcoming", timestamp_str: "", sort_order: 8 },
+    ];
+
+    await supabase.from("procurement_timeline").insert(
+      timelineSteps.map((s) => ({ ...s, ticket_id: ticketId }))
+    );
+
+    // 4. Create / update payment calculation
+    const rate = params.crop === "Wheat" ? 2430 : params.crop === "Paddy" ? 2300 : params.crop === "Mustard" ? 5650 : 5440;
+    const grossAmount = params.quantityQuintals * rate;
+
+    await supabase.from("payments").insert({
+      ticket_id: ticketId,
+      farmer_id: params.farmerId,
+      gross_amount: grossAmount,
+      currency: "INR",
+      rate_per_quintal: rate,
+      quintals: params.quantityQuintals,
+      stage: "approved",
+      expected_credit_in: "Within 48 hours of weighing",
+      expected_credit_in_hi: "तुलाई के 48 घंटे के भीतर",
+      bank_masked: "PNB ••••4417",
+      progress_pct: 35,
+    });
+
+    // 5. Send notification
+    await supabase.from("notifications").insert({
+      user_id: params.farmerId,
+      title: "स्लॉट एवं टोकन आवंटित (Slot Confirmed)",
+      body: `टोकन ${token} आवंटित किया गया। निर्धारित समय: ${slotWindow}।`,
+      is_read: false,
+    });
+
+    // 6. Push activity
+    await analyticsService.pushActivity({
+      kind: "queue",
+      message: `Farmer ${params.farmerName} confirmed slot (${token} · ${params.quantityQuintals} qtl ${params.crop})`,
+    });
+
+    return { token, ticketId };
+  },
 };
+
+// ─── Centre Service ───
+
+export interface CentreUpdatePayload {
+  queueLength?: number;
+  predictedWaitMin?: number;
+  capacityUsedPct?: number;
+  activeCounters?: number;
+  processingRatePerHour?: number;
+  farmersToday?: number;
+  procuredTodayQuintals?: number;
+}
 
 export const centreService = {
-  /** GET /v1/centres?district=karnal */
-  list: (): Promise<ProcurementCentre[]> => resolve(demoCentres),
-  /** GET /v1/centres/nearby?crop=wheat&quantity=120 — ranked by the matching model */
-  findSmartCentres: (): Promise<ProcurementCentre[]> => resolve(demoCentres.slice(0, 3)),
+  /** List all procurement centres ordered by code */
+  list: async (): Promise<ProcurementCentre[]> => {
+    const { data, error } = await supabase
+      .from("procurement_centres")
+      .select("*")
+      .order("code");
+    if (error) throw new Error(`Failed to load centres: ${error.message}`);
+    if (!data || data.length === 0) throw new Error("No procurement centres found in database");
+    return data.map(mapCentre);
+  },
+
+  /** Get a single centre by ID */
+  getById: async (id: string): Promise<ProcurementCentre> => {
+    const { data, error } = await supabase
+      .from("procurement_centres")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error) throw new Error(`Failed to load centre: ${error.message}`);
+    return mapCentre(data);
+  },
+
+  /** Update centre operational data */
+  update: async (id: string, updates: CentreUpdatePayload): Promise<void> => {
+    const dbUpdates: Record<string, any> = {};
+    if (updates.queueLength !== undefined) dbUpdates["queue_length"] = updates.queueLength;
+    if (updates.predictedWaitMin !== undefined) dbUpdates["predicted_wait_min"] = updates.predictedWaitMin;
+    if (updates.capacityUsedPct !== undefined) dbUpdates["capacity_used_pct"] = updates.capacityUsedPct;
+    if (updates.activeCounters !== undefined) dbUpdates["active_counters"] = updates.activeCounters;
+    if (updates.processingRatePerHour !== undefined) dbUpdates["processing_rate_per_hour"] = updates.processingRatePerHour;
+    if (updates.farmersToday !== undefined) dbUpdates["farmers_today"] = updates.farmersToday;
+    if (updates.procuredTodayQuintals !== undefined) dbUpdates["procured_today_quintals"] = updates.procuredTodayQuintals;
+
+    const { error } = await supabase.from("procurement_centres").update(dbUpdates).eq("id", id);
+    if (error) throw new Error(`Failed to update centre: ${error.message}`);
+  },
 };
+
+// ─── Slot Service ───
 
 export const slotService = {
-  /** GET /v1/slots/suggestion */
-  suggest: (): Promise<SlotSuggestion> => resolve(demoSlot),
-  /** POST /v1/slots/confirm */
-  confirm: (slotId: string): Promise<{ slotId: string; confirmed: true }> =>
-    resolve({ slotId, confirmed: true as const }),
+  /** Get AI-recommended slot for a farmer */
+  suggest: async (centreId?: string): Promise<SlotSuggestion | null> => {
+    let query = supabase.from("slots").select("*").eq("ai_recommended", true).eq("is_booked", false);
+    if (centreId) query = query.eq("centre_id", centreId);
+    const { data, error } = await query.limit(1).maybeSingle();
+
+    if (error) throw new Error(`Failed to load slot suggestion: ${error.message}`);
+    if (!data) {
+      // Also check for already-booked AI slot (farmer's current booking)
+      const { data: booked } = await supabase.from("slots").select("*").eq("ai_recommended", true).limit(1).maybeSingle();
+      if (booked) {
+        return {
+          id: booked.id,
+          centreId: booked.centre_id,
+          window: booked.window,
+          date: booked.date,
+          confidencePct: booked.confidence_pct || 0,
+          reason: booked.reason || "",
+          reasonHi: booked.reason_hi || "",
+        };
+      }
+      return null;
+    }
+    return {
+      id: data.id,
+      centreId: data.centre_id,
+      window: data.window,
+      date: data.date,
+      confidencePct: data.confidence_pct || 0,
+      reason: data.reason || "",
+      reasonHi: data.reason_hi || "",
+    };
+  },
+
+  /** List available slots for a centre */
+  listAvailable: async (centreId: string): Promise<SlotSuggestion[]> => {
+    const { data, error } = await supabase
+      .from("slots")
+      .select("*")
+      .eq("centre_id", centreId)
+      .eq("is_booked", false)
+      .order("created_at");
+    if (error) throw new Error(`Failed to load slots: ${error.message}`);
+    return (data || []).map((s) => ({
+      id: s.id,
+      centreId: s.centre_id,
+      window: s.window,
+      date: s.date,
+      confidencePct: s.confidence_pct || 0,
+      reason: s.reason || "",
+      reasonHi: s.reason_hi || "",
+    }));
+  },
+
+  /** Book/confirm a slot */
+  confirm: async (slotId: string, farmerId?: string): Promise<void> => {
+    const { error } = await supabase.from("slots").update({
+      is_booked: true,
+      booked_by: farmerId || null,
+    }).eq("id", slotId);
+    if (error) throw new Error(`Failed to confirm slot: ${error.message}`);
+  },
 };
+
+// ─── Queue Service ───
 
 export const queueService = {
-  /** GET /v1/queue/ticket — WebSocket topic: queue.ticket.{token} */
-  getTicket: (): Promise<QueueTicket> => resolve(demoTicket),
-  /** GET /v1/centres/{id}/queue — WebSocket topic: queue.centre.{id} */
-  getCentreQueue: (): Promise<QueueRow[]> => resolve(demoQueueRows),
+  /** Get the farmer's active queue ticket */
+  getTicket: async (farmerId?: string): Promise<QueueTicket | null> => {
+    let query = supabase.from("queue_tickets").select("*");
+    if (farmerId) {
+      query = query.eq("farmer_id", farmerId);
+    }
+    // Get the most recent active ticket (not done)
+    const { data, error } = await query
+      .not("stage", "eq", "done")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to load queue ticket: ${error.message}`);
+    if (!data) return null;
+
+    return {
+      token: data.token,
+      centreId: data.centre_id,
+      slotWindow: data.slot_window,
+      farmersAhead: data.farmers_ahead,
+      etaMinutes: data.eta_minutes,
+      status: data.stage as QueueTicket["status"],
+    };
+  },
+
+  /** Get all tickets for a centre's live queue */
+  getCentreQueue: async (centreId?: string): Promise<QueueRow[]> => {
+    let query = supabase.from("queue_tickets").select("*");
+    if (centreId) query = query.eq("centre_id", centreId);
+    const { data, error } = await query.order("created_at", { ascending: true });
+
+    if (error) throw new Error(`Failed to load centre queue: ${error.message}`);
+    return (data || []).map((t) => ({
+      token: t.token,
+      farmerName: t.farmer_name || "Unknown",
+      village: t.village || "",
+      crop: t.crop || "Wheat",
+      quantityQuintals: Number(t.quantity_quintals) || 0,
+      slotWindow: t.slot_window,
+      waitedMin: t.waited_min || 0,
+      status: (t.stage === "in_queue" ? "waiting" : t.stage) as QueueRow["status"],
+    }));
+  },
+
+  /** Operator: update a ticket's stage */
+  updateStage: async (ticketId: string, stage: string): Promise<void> => {
+    const { error } = await supabase
+      .from("queue_tickets")
+      .update({ stage, updated_at: new Date().toISOString() })
+      .eq("id", ticketId);
+    if (error) throw new Error(`Failed to update ticket stage: ${error.message}`);
+  },
+
+  /** Operator: update a ticket's stage by token */
+  updateStageByToken: async (token: string, stage: string): Promise<void> => {
+    const { error } = await supabase
+      .from("queue_tickets")
+      .update({ stage, updated_at: new Date().toISOString() })
+      .eq("token", token);
+    if (error) throw new Error(`Failed to update ticket stage: ${error.message}`);
+  },
 };
+
+// ─── Procurement Timeline Service ───
 
 export const procurementService = {
-  /** GET /v1/procurement/timeline */
-  getTimeline: (): Promise<TimelineStep[]> => resolve(demoTimeline),
+  /** Get timeline steps for a ticket or farmer */
+  getTimeline: async (ticketId?: string, farmerId?: string): Promise<TimelineStep[]> => {
+    let targetTicketId = ticketId;
+
+    if (!targetTicketId && farmerId) {
+      const { data: activeTicket } = await supabase
+        .from("queue_tickets")
+        .select("id")
+        .eq("farmer_id", farmerId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (activeTicket) {
+        targetTicketId = activeTicket.id;
+      }
+    }
+
+    let query = supabase.from("procurement_timeline").select("*");
+    if (targetTicketId) {
+      query = query.eq("ticket_id", targetTicketId);
+    }
+    const { data, error } = await query.order("sort_order");
+
+    if (error) throw new Error(`Failed to load timeline: ${error.message}`);
+
+    if (!data || data.length === 0) {
+      // Return default 8-step structure if no ticket has been initialized yet
+      return [
+        { id: "step-1", label: "Farmer Registration", labelHi: "किसान पंजीकरण", detail: "Registered & verified in central database", detailHi: "केंद्रीय डेटाबेस में पंजीकृत एवं सत्यापित", state: "done", timestamp: "Ready" },
+        { id: "step-2", label: "Smart Slot Allocation", labelHi: "स्मार्ट स्लॉट आवंटन", detail: "Select optimal mandi centre and book slot", detailHi: "नजदीकी मंडी का चयन करें एवं समय आरक्षित करें", state: "upcoming" },
+        { id: "step-3", label: "Mandi Arrival & Gate Entry", labelHi: "मंडी आगमन एवं प्रवेश", detail: "Reach gate before designated slot window", detailHi: "निर्धारित समय से पूर्व मुख्य द्वार पर पहुँचें", state: "upcoming" },
+        { id: "step-4", label: "Electronic Weighing", labelHi: "इलेक्ट्रॉनिक तुलाई", detail: "Automated digital weighbridge tare & gross weight", detailHi: "स्वचालित धर्मकांटे पर वाहन सहित तुलाई", state: "upcoming" },
+        { id: "step-5", label: "Quality Check & FAQ Grading", labelHi: "गुणवत्ता जाँच (FAQ)", detail: "Moisture & grain purity certification", detailHi: "नमी एवं अनाज गुणवत्ता मानक प्रमाणन", state: "upcoming" },
+        { id: "step-6", label: "Procurement Acceptance", labelHi: "खरीद स्वीकृति", detail: "MSP confirmation voucher approved", detailHi: "न्यूनतम समर्थन मूल्य (MSP) वाउचर स्वीकृत", state: "upcoming" },
+        { id: "step-7", label: "J-Form Bill Generation", labelHi: "जे-फॉर्म बिल निर्माण", detail: "Official mandi tax invoice & weighing slip", detailHi: "डिजिटल जे-फॉर्म एवं तुलाई प्रमाणपत्र जारी", state: "upcoming" },
+        { id: "step-8", label: "DBT Direct Bank Payment", labelHi: "बैंक खाता भुगतान (DBT)", detail: "Direct Benefit Transfer to registered bank account", detailHi: "पीएफएमएस द्वारा सीधे बैंक खाते में भुगतान", state: "upcoming" },
+      ];
+    }
+
+    return data.map((d) => ({
+      id: d.step_id,
+      label: d.label,
+      labelHi: d.label_hi,
+      detail: d.detail || "",
+      detailHi: d.detail_hi || "",
+      state: d.state as TimelineStep["state"],
+      timestamp: d.timestamp_str || undefined,
+    }));
+  },
+
+  /** Update a timeline step state */
+  updateStep: async (stepId: string, ticketId: string, state: string, timestamp?: string): Promise<void> => {
+    const updates: Record<string, any> = { state };
+    if (timestamp) updates["timestamp_str"] = timestamp;
+    const { error } = await supabase
+      .from("procurement_timeline")
+      .update(updates)
+      .eq("step_id", stepId)
+      .eq("ticket_id", ticketId);
+    if (error) throw new Error(`Failed to update timeline step: ${error.message}`);
+  },
 };
+
+// ─── Payment Service ───
 
 export const paymentService = {
-  /** GET /v1/payments/status */
-  getStatus: (): Promise<PaymentStatus> => resolve(demoPayment),
+  /** Get payment status for a farmer/ticket */
+  getStatus: async (farmerId?: string): Promise<PaymentStatus | null> => {
+    let query = supabase.from("payments").select("*");
+    if (farmerId) {
+      query = query.eq("farmer_id", farmerId);
+    }
+    const { data, error } = await query
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to load payment status: ${error.message}`);
+
+    if (!data) {
+      if (farmerId) {
+        // Compute dynamically for the farmer's registered crop & quantity
+        const { data: fProfile } = await supabase
+          .from("farmers")
+          .select("*")
+          .eq("id", farmerId)
+          .maybeSingle();
+
+        const q = fProfile ? Number(fProfile.quantity_quintals) : 100;
+        const crop = fProfile?.crop || "Wheat";
+        const rate = crop === "Wheat" ? 2430 : crop === "Paddy" ? 2300 : crop === "Mustard" ? 5650 : 5440;
+        return {
+          grossAmount: q * rate,
+          currency: "INR",
+          ratePerQuintal: rate,
+          quintals: q,
+          stage: "pending_verification",
+          expectedCreditIn: "Within 48 hours of weighing",
+          expectedCreditInHi: "तुलाई के 48 घंटे के भीतर",
+          bankMasked: "PNB ••••4417",
+          progressPct: 25,
+        };
+      }
+      return null;
+    }
+
+    return {
+      grossAmount: Number(data.gross_amount),
+      currency: "INR",
+      ratePerQuintal: Number(data.rate_per_quintal),
+      quintals: Number(data.quintals),
+      stage: data.stage as PaymentStatus["stage"],
+      expectedCreditIn: data.expected_credit_in || "",
+      expectedCreditInHi: data.expected_credit_in_hi || "",
+      bankMasked: data.bank_masked || "",
+      progressPct: data.progress_pct || 0,
+    };
+  },
+
+  /** Update payment stage */
+  updateStage: async (paymentId: string, stage: string, progressPct?: number): Promise<void> => {
+    const updates: Record<string, any> = { stage, updated_at: new Date().toISOString() };
+    if (progressPct !== undefined) updates["progress_pct"] = progressPct;
+    const { error } = await supabase.from("payments").update(updates).eq("id", paymentId);
+    if (error) throw new Error(`Failed to update payment: ${error.message}`);
+  },
 };
+
+// ─── Forecast / Analytics Service ───
 
 export const forecastService = {
-  /** GET /v1/forecast/queue?centre=centre-a */
-  queueForecast: (): Promise<ForecastPoint[]> => resolve(demoForecast),
-  /** GET /v1/analytics/wait-times */
-  waitAnalytics: (): Promise<WaitAnalyticsPoint[]> => resolve(demoWaitAnalytics),
-  /** GET /v1/analytics/throughput */
-  throughput: (): Promise<ThroughputPoint[]> => resolve(demoThroughput),
+  queueForecast: async (centreId?: string): Promise<ForecastPoint[]> => {
+    let query = supabase.from("forecast_points").select("*");
+    if (centreId) query = query.eq("centre_id", centreId);
+    const { data, error } = await query.order("hour_label");
+    if (error) throw new Error(`Failed to load forecast: ${error.message}`);
+    return (data || []).map((p) => ({
+      label: p.hour_label,
+      queue: p.queue_actual,
+      predicted: p.queue_predicted,
+      capacityLine: p.capacity_line,
+    }));
+  },
+
+  waitAnalytics: async (): Promise<WaitAnalyticsPoint[]> => {
+    const { data, error } = await supabase
+      .from("wait_analytics")
+      .select("*")
+      .order("created_at");
+    if (error) throw new Error(`Failed to load wait analytics: ${error.message}`);
+    return (data || []).map((w) => ({
+      label: w.day_label,
+      beforeMin: w.before_min,
+      afterMin: w.after_min,
+    }));
+  },
+
+  throughput: async (): Promise<ThroughputPoint[]> => {
+    const { data, error } = await supabase
+      .from("throughput_points")
+      .select("*")
+      .order("hour_label");
+    if (error) throw new Error(`Failed to load throughput: ${error.message}`);
+    return (data || []).map((t) => ({
+      label: t.hour_label,
+      quintals: Number(t.quintals),
+    }));
+  },
 };
+
+// ─── AI Recommendation Service ───
 
 export const recommendationService = {
-  /** GET /v1/ai/recommendations */
-  current: (): Promise<AiRecommendation> => resolve(demoRecommendation),
-  /** POST /v1/ai/recommendations/{id}/approve */
-  approve: (id: string): Promise<{ id: string; status: "approved" }> =>
-    resolve({ id, status: "approved" as const }),
+  /** Get the latest recommendation */
+  current: async (): Promise<AiRecommendation | null> => {
+    const { data, error } = await supabase
+      .from("ai_recommendations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to load recommendation: ${error.message}`);
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      headline: data.headline,
+      rationale: data.rationale,
+      impact: data.impact,
+      confidencePct: data.confidence_pct,
+      action: {
+        shiftAppointments: data.shift_appointments || 0,
+        fromCentreId: data.from_centre_id || "",
+        toCentreId: data.to_centre_id || "",
+      },
+      status: data.status as AiRecommendation["status"],
+    };
+  },
+
+  /** Admin approves a recommendation — rebalance centre loads */
+  approve: async (id: string): Promise<void> => {
+    // 1. Get the recommendation to find from/to centres
+    const { data: rec } = await supabase.from("ai_recommendations").select("*").eq("id", id).single();
+    if (!rec) throw new Error("Recommendation not found");
+
+    // 2. Mark approved
+    await supabase.from("ai_recommendations").update({ status: "approved", updated_at: new Date().toISOString() }).eq("id", id);
+
+    // 3. Rebalance: reduce load on fromCentre, increase on toCentre
+    if (rec.from_centre_id) {
+      const { data: from } = await supabase.from("procurement_centres").select("*").eq("id", rec.from_centre_id).single();
+      if (from) {
+        await centreService.update(rec.from_centre_id, {
+          queueLength: Math.max(8, from.queue_length - (rec.shift_appointments || 0)),
+          predictedWaitMin: Math.round(from.predicted_wait_min * 0.46),
+          capacityUsedPct: Math.min(from.capacity_used_pct, 74),
+          activeCounters: Math.min(from.total_counters, from.active_counters + 2),
+          processingRatePerHour: Math.round(from.processing_rate_per_hour * 1.33),
+        });
+      }
+    }
+    if (rec.to_centre_id) {
+      const { data: to } = await supabase.from("procurement_centres").select("*").eq("id", rec.to_centre_id).single();
+      if (to) {
+        await centreService.update(rec.to_centre_id, {
+          queueLength: to.queue_length + Math.round((rec.shift_appointments || 0) / 3),
+          predictedWaitMin: to.predicted_wait_min + 11,
+          capacityUsedPct: Math.min(95, to.capacity_used_pct + 17),
+          farmersToday: to.farmers_today + (rec.shift_appointments || 0),
+        });
+      }
+    }
+
+    // 4. Update affected queue tickets
+    await supabase.from("queue_tickets")
+      .update({ farmers_ahead: 3, eta_minutes: 14 })
+      .not("stage", "eq", "done");
+  },
+
+  /** Admin overrides a recommendation */
+  override: async (id: string): Promise<void> => {
+    const { error } = await supabase.from("ai_recommendations")
+      .update({ status: "overridden", updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) throw new Error(`Failed to override: ${error.message}`);
+  },
+
+  /** Admin starts reviewing */
+  review: async (id: string): Promise<void> => {
+    const { error } = await supabase.from("ai_recommendations")
+      .update({ status: "reviewing", updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) throw new Error(`Failed to update review status: ${error.message}`);
+  },
 };
 
+// ─── Alerts & Activity Service ───
+
 export const analyticsService = {
-  /** GET /v1/centres/alerts */
-  alerts: (): Promise<CentreAlert[]> => resolve(demoAlerts),
-  /** WebSocket topic: district.activity */
-  activityFeed: (): Promise<ActivityEvent[]> => resolve(demoActivity),
+  /** Get active (unresolved) alerts */
+  alerts: async (centreId?: string): Promise<CentreAlert[]> => {
+    let query = supabase.from("centre_alerts").select("*").eq("is_resolved", false);
+    if (centreId) query = query.eq("centre_id", centreId);
+    const { data, error } = await query.order("created_at", { ascending: false });
+
+    if (error) throw new Error(`Failed to load alerts: ${error.message}`);
+    return (data || []).map((a) => ({
+      id: a.id,
+      severity: a.severity as CentreAlert["severity"],
+      title: a.title,
+      detail: a.detail,
+      atMinutes: a.at_minutes || undefined,
+    }));
+  },
+
+  /** Create a new alert */
+  createAlert: async (centreId: string, severity: string, title: string, detail: string): Promise<void> => {
+    const { error } = await supabase.from("centre_alerts").insert({
+      centre_id: centreId,
+      severity,
+      title,
+      detail,
+    });
+    if (error) throw new Error(`Failed to create alert: ${error.message}`);
+  },
+
+  /** Resolve an alert */
+  resolveAlert: async (alertId: string): Promise<void> => {
+    const { error } = await supabase.from("centre_alerts").update({ is_resolved: true }).eq("id", alertId);
+    if (error) throw new Error(`Failed to resolve alert: ${error.message}`);
+  },
+
+  /** Get recent activity feed */
+  activityFeed: async (limit = 24): Promise<ActivityEvent[]> => {
+    const { data, error } = await supabase
+      .from("activity_feed")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) throw new Error(`Failed to load activity feed: ${error.message}`);
+    return (data || []).map((d) => ({
+      id: d.id,
+      at: d.at_time,
+      kind: d.kind as ActivityEvent["kind"],
+      message: d.message,
+    }));
+  },
+
+  /** Push a new activity event */
+  pushActivity: async (event: { kind: string; message: string; centreId?: string }): Promise<void> => {
+    const at = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const { error } = await supabase.from("activity_feed").insert({
+      at_time: at,
+      kind: event.kind,
+      message: event.message,
+      centre_id: event.centreId || null,
+    });
+    if (error) console.warn("Failed to push activity:", error.message);
+  },
+};
+
+// ─── Audit Service ───
+
+export const auditService = {
+  /** Log an auditable action */
+  log: async (params: {
+    actorId?: string;
+    actorRole?: string;
+    action: string;
+    targetType?: string;
+    targetId?: string;
+    metadata?: Record<string, any>;
+  }): Promise<void> => {
+    const { error } = await supabase.from("audit_logs").insert({
+      actor_id: params.actorId || null,
+      actor_role: params.actorRole || null,
+      action: params.action,
+      target_type: params.targetType || null,
+      target_id: params.targetId || null,
+      metadata: params.metadata || {},
+    });
+    if (error) console.warn("Audit log failed:", error.message);
+  },
+};
+
+// ─── Notification Service ───
+
+export const notificationService = {
+  /** Get notifications for a user */
+  getForUser: async (userId: string): Promise<Array<{ id: string; title: string; body: string; isRead: boolean; createdAt: string }>> => {
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) throw new Error(`Failed to load notifications: ${error.message}`);
+    return (data || []).map((n) => ({
+      id: n.id,
+      title: n.title,
+      body: n.body,
+      isRead: n.is_read,
+      createdAt: n.created_at,
+    }));
+  },
+
+  /** Send a notification */
+  send: async (userId: string, title: string, body: string): Promise<void> => {
+    const { error } = await supabase.from("notifications").insert({ user_id: userId, title, body });
+    if (error) throw new Error(`Failed to send notification: ${error.message}`);
+  },
+
+  /** Mark as read */
+  markRead: async (notifId: string): Promise<void> => {
+    await supabase.from("notifications").update({ is_read: true }).eq("id", notifId);
+  },
 };

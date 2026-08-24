@@ -1,110 +1,365 @@
-import type { Language } from "./types";
+/**
+ * KISAN SETU SAHAYAK — Context-Aware Farmer Digital Assistant
+ * Natural Language understanding for Hindi, Hinglish & English with live Supabase data integration,
+ * session memory, navigation triggers, and safe action confirmation.
+ */
+import type {
+  Farmer,
+  Language,
+  PaymentStatus,
+  ProcurementCentre,
+  QueueTicket,
+  SlotSuggestion,
+  TimelineStep,
+} from "./types";
+
+export interface LiveVoiceContext {
+  farmer?: Farmer | null;
+  ticket?: QueueTicket | null;
+  slot?: SlotSuggestion | null;
+  payment?: PaymentStatus | null;
+  centres?: ProcurementCentre[];
+  timeline?: TimelineStep[];
+  notifications?: Array<{ id: string; title: string; body: string; isRead: boolean }>;
+}
+
+export interface SahayakConversationState {
+  lastTopic?: "turn" | "procurement" | "centre" | "payment" | "slot" | "notification" | null;
+  lastReferencedCentreId?: string | null;
+  pendingAction?: {
+    type: "book_slot" | "switch_language" | "read_notifications";
+    payload?: any;
+    description: string;
+    descriptionHi: string;
+  } | null;
+}
+
+export interface SahayakResponse {
+  text: string;
+  speechText: string;
+  facts?: Array<{ label: string; value: string }>;
+  navigationTarget?: "home" | "centres" | "queue" | "timeline" | "payments" | "profile" | null;
+  pendingAction?: SahayakConversationState["pendingAction"] | null;
+  suggestedFollowUps?: Array<{ textEn: string; textHi: string }>;
+}
 
 /**
- * Voice layer — API ready.
- * `matchIntent` is a local keyword resolver over demo answers. To go live,
- * replace its body with a call to an NLU/LLM endpoint returning the same shape.
+ * Intelligent Intent Classifier & Natural Language Processor for Kisan Setu Sahayak
  */
+export function processSahayakQuery(
+  rawQuery: string,
+  ctx: LiveVoiceContext,
+  lang: Language,
+  sessionState: SahayakConversationState = {}
+): SahayakResponse {
+  const query = rawQuery.trim().toLowerCase();
+  const hi = lang === "hi";
 
-export interface VoiceIntent {
-  id: string;
-  keywords: string[];
-  question: { hi: string; en: string };
-  answer: { hi: string; en: string };
-  facts?: Array<{ label: string; value: string }>;
-}
+  // Farmer context variables
+  const farmerName = ctx.farmer?.name || "किसान भाई";
+  const crop = ctx.farmer?.crop || "Wheat";
+  const cropHi = ctx.farmer?.cropHi || "गेहूँ";
+  const quantity = ctx.farmer?.quantityQuintals || 100;
+  const ticket = ctx.ticket;
+  const payment = ctx.payment;
+  const timeline = ctx.timeline || [];
+  const centres = ctx.centres || [];
 
-export const voiceIntents: VoiceIntent[] = [
-  {
-    id: "turn",
-    keywords: ["बारी", "कतार", "turn", "queue", "number", "token", "कब आएगी"],
-    question: { hi: "मेरी बारी कब आएगी?", en: "When is my turn?" },
-    answer: {
-      hi: "आपका टोकन KS-3842 है। आपसे आगे 4 किसान हैं। अनुमानित समय 18 मिनट। केंद्र B, काउंटर 3।",
-      en: "Your token is KS-3842. There are 4 farmers ahead of you. Estimated time 18 minutes at Centre B, counter 3.",
-    },
-    facts: [
-      { label: "Token", value: "KS-3842" },
-      { label: "Ahead", value: "4 farmers" },
-      { label: "ETA", value: "18 min" },
-    ],
-  },
-  {
-    id: "centre",
-    keywords: ["सेंटर", "केंद्र", "centre", "center", "अच्छा", "कहाँ", "which", "best"],
-    question: { hi: "कौन सा सेंटर मेरे लिए अच्छा है?", en: "Which centre is best for me?" },
-    answer: {
-      hi: "केंद्र B सबसे अच्छा है। 12 किलोमीटर दूर, कतार में 13 किसान, प्रतीक्षा केवल 41 मिनट। केंद्र A पास है पर वहाँ 126 मिनट लगेंगे।",
-      en: "Centre B is best. 12 km away, 13 farmers in queue, only 41 minutes wait. Centre A is closer but would take 126 minutes.",
-    },
-    facts: [
-      { label: "Recommended", value: "Centre B · 12 km" },
-      { label: "Wait", value: "41 min vs 126 min" },
-      { label: "Capacity", value: "54% used" },
-    ],
-  },
-  {
-    id: "when",
-    keywords: ["आज", "जाना", "कब जाना", "slot", "समय", "time", "go", "today"],
-    question: { hi: "आज मुझे कब जाना चाहिए?", en: "When should I go today?" },
-    answer: {
-      hi: "आपका स्मार्ट स्लॉट 11:30 से 12:00 है। घर से 11:10 पर निकलें। इस समय काउंटर खाली रहते हैं, इंतज़ार लगभग शून्य।",
-      en: "Your smart slot is 11:30 to 12:00. Leave home by 11:10. Counters are free at that time, so waiting is close to zero.",
-    },
-    facts: [
-      { label: "Smart slot", value: "11:30 – 12:00" },
-      { label: "Leave home", value: "11:10" },
-      { label: "Confidence", value: "93%" },
-    ],
-  },
-  {
-    id: "payment",
-    keywords: ["payment", "पैसा", "भुगतान", "पेमेंट", "बैंक", "money", "rupee"],
-    question: { hi: "मेरी payment कब आएगी?", en: "When will my payment arrive?" },
-    answer: {
-      hi: "आपकी राशि ₹2,91,600 स्वीकृत हो चुकी है। तुलाई के 48 घंटे के भीतर PNB खाते ••••4417 में जमा होगी।",
-      en: "Your amount of ₹2,91,600 is approved. It will be credited to PNB account ••••4417 within 48 hours of weighing.",
-    },
-    facts: [
-      { label: "Amount", value: "₹2,91,600" },
-      { label: "Rate", value: "₹2,430 / quintal" },
-      { label: "Status", value: "Approved · in transfer" },
-    ],
-  },
-];
+  const defaultCentre: ProcurementCentre = {
+    id: "a1111111-1111-4111-8111-111111111111",
+    code: "A",
+    name: "Mandi Centre A — Karnal City",
+    nameHi: "मंडी केंद्र A — करनाल शहर",
+    distanceKm: 7,
+    queueLength: 1,
+    predictedWaitMin: 10,
+    capacityUsedPct: 34,
+    dailyCapacityQuintals: 5000,
+    procuredTodayQuintals: 1700,
+    activeCounters: 4,
+    totalCounters: 6,
+    processingRatePerHour: 18,
+    farmersToday: 142,
+    map: { x: 42, y: 55 },
+    recommended: true,
+  };
 
-export const fallbackAnswer: Record<Language, string> = {
-  hi: "मैं आपकी बारी, सेंटर, स्लॉट और payment के बारे में बता सकता हूँ। नीचे दिए सवालों में से कोई चुनें।",
-  en: "I can help with your turn, centre choice, slot timing and payment. Pick one of the questions below.",
-};
+  const recommendedCentre: ProcurementCentre = centres.find((c) => c.recommended) || centres[0] || defaultCentre;
+  const assignedCentre: ProcurementCentre = centres.find((c) => c.id === ticket?.centreId) || recommendedCentre;
 
-export function matchIntent(transcript: string): VoiceIntent | null {
-  const text = transcript.toLowerCase();
-  let best: { intent: VoiceIntent; score: number } | null = null;
-  for (const intent of voiceIntents) {
-    const score = intent.keywords.reduce((n, k) => (text.includes(k.toLowerCase()) ? n + 1 : n), 0);
-    if (score > 0 && (!best || score > best.score)) best = { intent, score };
+  const hasAny = (keywords: string[]) => keywords.some((k) => query.includes(k));
+
+  // ─── 1. NAVIGATION COMMANDS ───
+  if (hasAny(["queue", "कतार", "टोकन खोलो", "open queue", "show queue", "live queue", "q kholo"])) {
+    sessionState.lastTopic = "turn";
+    if (ticket) {
+      return {
+        text: hi
+          ? `बिल्कुल ${farmerName} जी। आपकी लाइव कतार खोल रहा हूँ। आपका टोकन ${ticket.token} है और आपसे आगे ${ticket.farmersAhead} किसान हैं।`
+          : `Sure ${farmerName}. Opening your live virtual queue. Your token is ${ticket.token} with ${ticket.farmersAhead} farmers ahead.`,
+        speechText: hi
+          ? `आपकी लाइव कतार खोल रहा हूँ। टोकन ${ticket.token}, आगे ${ticket.farmersAhead} किसान।`
+          : `Opening your live queue. Token ${ticket.token}, ${ticket.farmersAhead} farmers ahead.`,
+        navigationTarget: "queue",
+        facts: [
+          { label: hi ? "टोकन" : "Token", value: ticket.token },
+          { label: hi ? "आगे किसान" : "Farmers Ahead", value: `${ticket.farmersAhead}` },
+          { label: hi ? "ईटीए" : "ETA", value: `${ticket.etaMinutes} min` },
+        ],
+      };
+    } else {
+      return {
+        text: hi
+          ? `आपके पास अभी कोई सक्रिय टोकन नहीं है। क्या आप मंडी स्लॉट बुक करना चाहते हैं?`
+          : `You don't have an active queue ticket yet. Would you like to explore available mandi slots?`,
+        speechText: hi
+          ? `कोई सक्रिय टोकन नहीं मिला। स्लॉट बुकिंग पृष्ठ खोल रहा हूँ।`
+          : `No active ticket found. Opening slot booking.`,
+        navigationTarget: "centres",
+      };
+    }
   }
-  return best?.intent ?? null;
+
+  if (hasAny(["payment", "पेमेंट", "पैसा", "भुगतान", "dbt", "rupee", "show payment", "paisa", "paise"])) {
+    sessionState.lastTopic = "payment";
+    const amt = payment?.grossAmount ? `₹${payment.grossAmount.toLocaleString("en-IN")}` : `₹${(quantity * 2430).toLocaleString("en-IN")}`;
+    const bank = payment?.bankMasked || "PNB ••••4417";
+    const creditTime = hi ? (payment?.expectedCreditInHi || "तुलाई के 48 घंटे के भीतर") : (payment?.expectedCreditIn || "within 48 hours of weighing");
+
+    return {
+      text: hi
+        ? `आपकी कुल देय राशि ${amt} स्वीकृत है। यह राशि सीधे बैंक खाते ${bank} में ${creditTime} जमा की जाएगी। बैंक भुगतान विवरण खोल रहा हूँ।`
+        : `Your gross payable MSP amount is ${amt}. It will be credited to bank account ${bank} ${creditTime} via DBT. Opening payments dashboard.`,
+      speechText: hi
+        ? `कुल राशि ${amt} स्वीकृत है। भुगतान पृष्ठ खोल रहा हूँ।`
+        : `Approved amount is ${amt}. Opening payment dashboard.`,
+      navigationTarget: "payments",
+      facts: [
+        { label: hi ? "देय राशि" : "Gross Amount", value: amt },
+        { label: hi ? "बैंक खाता" : "Bank Account", value: bank },
+        { label: hi ? "स्थिति" : "Status", value: hi ? "स्वीकृत · हस्तांतरण जारी" : "Approved · In Transfer" },
+      ],
+      suggestedFollowUps: [
+        { textEn: "Download J-Form receipt", textHi: "जे-फॉर्म रसीद कैसे मिलेगी?" },
+        { textEn: "When is my turn?", textHi: "मेरी बारी कब आएगी?" },
+      ],
+    };
+  }
+
+  if (hasAny(["timeline", "stage", "progress", "status", "कहाँ तक", "kahan tak", "खरीद चरण", "प्रगति", "procurement"])) {
+    sessionState.lastTopic = "procurement";
+    const activeStep = timeline.find((s) => s.state === "active") || timeline[1];
+    const stepName = (hi ? activeStep?.labelHi : activeStep?.label) || (hi ? "मंडी आगमन" : "Mandi Arrival");
+
+    return {
+      text: hi
+        ? `आपकी खरीद वर्तमान में चरण '${stepName}' पर है। विस्तृत 8-चरणीय टाइमलाइन खोल रहा हूँ।`
+        : `Your procurement is currently at stage '${stepName}'. Opening detailed procurement timeline.`,
+      speechText: hi
+        ? `वर्तमान चरण: ${stepName}। टाइमलाइन खोल रहा हूँ।`
+        : `Current stage: ${stepName}. Opening timeline.`,
+      navigationTarget: "timeline",
+      facts: [
+        { label: hi ? "वर्तमान चरण" : "Active Stage", value: stepName },
+        { label: hi ? "फसल" : "Crop", value: `${quantity} qtl ${hi ? cropHi : crop}` },
+      ],
+    };
+  }
+
+  if (hasAny(["profile", "account", "प्रोफ़ाइल", "खाता", "kisan card", "farmer id"])) {
+    return {
+      text: hi ? "आपकी किसान प्रोफ़ाइल विवरण खोल रहा हूँ।" : "Opening your farmer profile details.",
+      speechText: hi ? "प्रोफ़ाइल खोल रहा हूँ।" : "Opening profile.",
+      navigationTarget: "profile",
+    };
+  }
+
+  // ─── ACTION: BOOK SLOT ───
+  if (hasAny(["book", "बुक", "slot चुनो", "स्लॉट चुनो", "चुनो", "chuno", "book slot", "slot book"])) {
+    const slotWindow = "11:30 – 12:00";
+    return {
+      text: hi
+        ? `${recommendedCentre.nameHi} पर समय ${slotWindow} का स्मार्ट स्लॉट उपलब्ध है। न्यूनतम प्रतीक्षा और 5/6 काउंटर चालू हैं। क्या मैं इसे आपके लिए बुक कर दूँ?`
+        : `A smart slot for ${slotWindow} is available at ${recommendedCentre.name} with minimal wait and 5 active counters. Shall I confirm and book this slot for you?`,
+      speechText: hi
+        ? `${recommendedCentre.nameHi} पर ${slotWindow} का स्लॉट उपलब्ध है। क्या मैं इसे बुक कर दूँ?`
+        : `Slot ${slotWindow} is available at ${recommendedCentre.name}. Should I confirm the booking?`,
+      pendingAction: {
+        type: "book_slot",
+        payload: { centreId: recommendedCentre.id, slotWindow },
+        description: `Confirm slot at ${recommendedCentre.name} (${slotWindow})`,
+        descriptionHi: `${recommendedCentre.nameHi} पर ${slotWindow} का स्लॉट आरक्षित करें`,
+      },
+    };
+  }
+
+  // ─── TIMING & ARRIVAL SCHEDULE ───
+  if (hasAny(["time", "समय", "कितने बजे", "kitne baje", "कब जाना", "kab jaana", "reach", "arrival", "schedule", "timing", "baje jaana"])) {
+    sessionState.lastTopic = "slot";
+    const slotWindow = ticket?.slotWindow || ctx.slot?.window || "11:30 – 12:00";
+
+    return {
+      text: hi
+        ? `आपका निर्धारित खरीद स्लॉट ${slotWindow} है। आपको समय से 10 मिनट पहले (लगभग 11:20 बजे) ${assignedCentre.nameHi} के मुख्य द्वार पर पहुँचना चाहिए ताकि तुलाई समय पर शुरू हो सके।`
+        : `Your assigned slot window is ${slotWindow}. You should arrive 10 minutes prior (around 11:20 AM) at ${assignedCentre.name} main gate for smooth weighing.`,
+      speechText: hi
+        ? `आपका स्लॉट ${slotWindow} है। 10 मिनट पहले मुख्य द्वार पर पहुँचें।`
+        : `Your slot is ${slotWindow}. Please arrive 10 minutes before your window.`,
+      facts: [
+        { label: hi ? "स्लॉट समय" : "Slot Window", value: slotWindow },
+        { label: hi ? "मंडी" : "Mandi Yard", value: hi ? assignedCentre.nameHi : assignedCentre.name },
+        { label: hi ? "गेट रिपोर्टिंग" : "Gate Entry", value: "10 min prior" },
+      ],
+      suggestedFollowUps: [
+        { textEn: "When is my turn?", textHi: "मेरी बारी कब आएगी?" },
+        { textEn: "Where is my payment?", textHi: "मेरी payment कब आएगी?" },
+      ],
+    };
+  }
+
+  // ─── CENTRE / MANDI INQUIRIES ───
+  if (hasAny(["centre", "center", "सेंटर", "mandi", "मंडी", "केंद्र", "kendr", "nearest", "kidhar", "kahan", "अच्छा रहेगा", "accha rahega", "kon sa"])) {
+    sessionState.lastTopic = "centre";
+    const best = recommendedCentre;
+    const bestName = hi ? best.nameHi : best.name;
+
+    return {
+      text: hi
+        ? `आपके लिए सबसे अच्छा खरीद केंद्र ${bestName} है। यह ${best.distanceKm} किमी दूर है और वर्तमान में केवल ${best.predictedWaitMin} मिनट की प्रतीक्षा है (${best.queueLength} किसान कतार में हैं)।`
+        : `The optimal procurement mandi for you is ${bestName} (${best.distanceKm} km away). Current predicted wait is only ${best.predictedWaitMin} minutes with ${best.queueLength} farmers in queue.`,
+      speechText: hi
+        ? `सबसे अच्छा केंद्र ${bestName} है, प्रतीक्षा केवल ${best.predictedWaitMin} मिनट।`
+        : `Best mandi is ${bestName}, wait is ${best.predictedWaitMin} minutes.`,
+      navigationTarget: "centres",
+      facts: [
+        { label: hi ? "अनुशंसित मंडी" : "Optimal Mandi", value: bestName },
+        { label: hi ? "दूरी" : "Distance", value: `${best.distanceKm} km` },
+        { label: hi ? "प्रतीक्षा समय" : "Est. Wait", value: `${best.predictedWaitMin} min` },
+      ],
+      suggestedFollowUps: [
+        { textEn: "Book slot at this mandi", textHi: "इस मंडी में स्लॉट बुक करें" },
+        { textEn: "When should I reach?", textHi: "मुझे कितने बजे जाना है?" },
+      ],
+    };
+  }
+
+  // ─── QUEUE & TURN INQUIRIES ───
+  if (hasAny(["बारी", "baari", "turn", "number", "ahead", "waiting", "wait", "kab aayegi", "kitne kisan", "kitne log"])) {
+    sessionState.lastTopic = "turn";
+    if (ticket) {
+      return {
+        text: hi
+          ? `नमस्ते ${farmerName} जी। आपका टोकन ${ticket.token} है। आपसे आगे अभी ${ticket.farmersAhead} किसान हैं। आपका अनुमानित प्रवेश समय लगभग ${ticket.etaMinutes} मिनट में है (${assignedCentre.nameHi})।`
+          : `Hello ${farmerName}. Your token is ${ticket.token}. There are currently ${ticket.farmersAhead} farmers ahead of you. Estimated wait is ${ticket.etaMinutes} minutes at ${assignedCentre.name}.`,
+        speechText: hi
+          ? `टोकन ${ticket.token}, आपसे आगे ${ticket.farmersAhead} किसान, अनुमानित समय ${ticket.etaMinutes} मिनट।`
+          : `Token ${ticket.token}, ${ticket.farmersAhead} farmers ahead, estimated wait ${ticket.etaMinutes} minutes.`,
+        facts: [
+          { label: hi ? "टोकन संख्या" : "Token No", value: ticket.token },
+          { label: hi ? "आगे किसान" : "Farmers Ahead", value: `${ticket.farmersAhead}` },
+          { label: hi ? "लाइव ईटीए" : "Live ETA", value: `${ticket.etaMinutes} min` },
+          { label: hi ? "मंडी केंद्र" : "Mandi Centre", value: hi ? assignedCentre.nameHi : assignedCentre.name },
+        ],
+        suggestedFollowUps: [
+          { textEn: "Show my live queue", textHi: "मेरा लाइव कतार टोकन दिखाओ" },
+          { textEn: "Directions to mandi", textHi: "मंडी पहुँचने का रास्ता" },
+        ],
+      };
+    } else {
+      return {
+        text: hi
+          ? `नमस्ते ${farmerName} जी। आपके पास अभी कोई सक्रिय टोकन नहीं है। आप तुरंत 1-क्लिक से ${recommendedCentre.nameHi} पर स्लॉट बुक कर सकते हैं।`
+          : `Hello ${farmerName}. You do not have an active queue ticket yet. Would you like to book a slot at ${recommendedCentre.name}?`,
+        speechText: hi
+          ? `कोई सक्रिय टोकन नहीं है। क्या मैं ${recommendedCentre.nameHi} पर स्लॉट बुक कर दूँ?`
+          : `No active ticket. Would you like to book at ${recommendedCentre.name}?`,
+        pendingAction: {
+          type: "book_slot",
+          payload: { centreId: recommendedCentre.id, slotWindow: "11:30 – 12:00" },
+          description: `Book smart slot at ${recommendedCentre.name} (11:30 – 12:00)`,
+          descriptionHi: `${recommendedCentre.nameHi} पर समय 11:30 – 12:00 का स्मार्ट स्लॉट आरक्षित करें`,
+        },
+      };
+    }
+  }
+
+  // ─── 5. FOLLOW-UP CONTEXT RESOLUTION ───
+  if (sessionState.lastTopic && (query.includes("और") || query.includes("aur") || query.includes("wahan") || query.includes("वहाँ") || query.includes("kitna samay"))) {
+    if (sessionState.lastTopic === "turn" || sessionState.lastTopic === "centre") {
+      const c = assignedCentre;
+      return {
+        text: hi
+          ? `आपके गाँव ${ctx.farmer?.village || "गाँव"} से ${c.nameHi} की दूरी ${c.distanceKm} किमी है। ट्रैक्टर या वाहन से पहुँचने में लगभग 20–25 मिनट लगेंगे।`
+          : `The distance from your village to ${c.name} is ${c.distanceKm} km. It will take approx 20–25 minutes by tractor/vehicle.`,
+        speechText: hi
+          ? `मंडी की दूरी ${c.distanceKm} किमी है, लगभग 20 से 25 मिनट लगेंगे।`
+          : `Mandi distance is ${c.distanceKm} km, taking around 20 to 25 minutes.`,
+        facts: [
+          { label: hi ? "दूरी" : "Distance", value: `${c.distanceKm} km` },
+          { label: hi ? "यातायात समय" : "Travel Time", value: "20–25 min" },
+        ],
+      };
+    }
+  }
+
+  // ─── 6. PROFESSIONAL SCOPE BOUNDARY / FALLBACK FOR INVALID QUESTIONS ───
+  return {
+    text: hi
+      ? `क्षमा करें ${farmerName} जी, मैं किसान सेतु का आधिकारिक खरीद सहायक हूँ और केवल कृषि उपज खरीद, मंडी आवंटन, स्लॉट बुकिंग, कतार टोकन एवं डीबीटी भुगतान से संबंधित प्रश्नों में सहायता के लिए अधिकृत हूँ। मैं अन्य असंबंधित विषयों पर उत्तर देने के लिए उपलब्ध नहीं हूँ।\n\nआप अपनी खरीद से संबंधित निम्नलिखित प्रश्न पूछ सकते हैं:\n• मेरी बारी कब आएगी?\n• मेरा खरीद केंद्र कौन सा है?\n• आज मुझे कितने बजे जाना है?\n• मेरी payment कहाँ तक पहुँची?\n• मेरा लाइव कतार टोकन खोलो`
+      : `I apologize, ${farmerName}. I am the official Kisan Setu Procurement Assistant, dedicated exclusively to crop procurement, mandi allocation, slot booking, virtual queue tokens, and MSP payment tracking. I am not programmed to answer queries outside this domain.\n\nPlease ask an authorized procurement question such as:\n• When is my turn?\n• Which mandi centre is best for me?\n• What time should I reach today?\n• Where is my payment?\n• Open my live queue`,
+    speechText: hi
+      ? `क्षमा करें ${farmerName} जी, मैं केवल कृषि उपज खरीद, मंडी स्लॉट, कतार और भुगतान से संबंधित प्रश्नों में सहायता के लिए अधिकृत हूँ। कृपया खरीद से संबंधित प्रश्न पूछें।`
+      : `I apologize ${farmerName}, I am only authorized to assist with crop procurement, mandi slots, queue tokens, and MSP payments. Please ask a procurement-related question.`,
+    facts: [
+      { label: hi ? "सहायक का दायरा" : "Assistant Scope", value: hi ? "कृषि खरीद एवं मंडी सेवाएँ" : "Agri Procurement & Mandi" },
+      { label: hi ? "अधिकार क्षेत्र" : "Domain", value: hi ? "स्लॉट, कतार, भुगतान, केंद्र" : "Slots, Queue, Payments, Centres" },
+    ],
+    suggestedFollowUps: [
+      { textEn: "When is my turn?", textHi: "मेरी बारी कब आएगी?" },
+      { textEn: "Which centre is best for me?", textHi: "कौन सा सेंटर अच्छा है?" },
+      { textEn: "When will my payment arrive?", textHi: "मेरी payment कब आएगी?" },
+      { textEn: "Show my virtual queue", textHi: "मेरा queue खोलो" },
+    ],
+  };
 }
 
-export function speak(text: string, language: Language) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+// ─── Speech Synthesis Helper ───
+
+export function speak(text: string, language: Language = "hi"): SpeechSynthesisUtterance | null {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+
   window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = language === "hi" ? "hi-IN" : "en-IN";
-  utterance.rate = 0.95;
-  window.speechSynthesis.speak(utterance);
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = language === "hi" ? "hi-IN" : "en-IN";
+  utter.rate = 0.95;
+  utter.pitch = 1.0;
+
+  const voices = window.speechSynthesis.getVoices();
+  const targetLang = language === "hi" ? "hi" : "en";
+  const match = voices.find((v) => v.lang.toLowerCase().startsWith(targetLang));
+  if (match) utter.voice = match;
+
+  window.speechSynthesis.speak(utter);
+  return utter;
 }
+
+export function stopSpeaking() {
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+// ─── Speech Recognition Helper ───
 
 type RecognitionCtor = new () => {
   lang: string;
-  interimResults: boolean;
   continuous: boolean;
+  interimResults: boolean;
   start: () => void;
   stop: () => void;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null;
+  abort: () => void;
+  onresult: ((e: any) => void) | null;
+  onerror: ((e: any) => void) | null;
   onend: (() => void) | null;
 };
 

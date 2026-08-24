@@ -4,6 +4,8 @@ import heroImage from "@/assets/mandi-dawn.jpg";
 import { PageShell } from "@/components/kisan/app-shell";
 import { BeforeAfter } from "@/components/kisan/before-after";
 import { PrototypeBadge, SectionLabel, StatCard } from "@/components/kisan/primitives";
+import { useAuth } from "@/hooks/use-auth";
+import { ROLE_PORTALS } from "@/lib/supabase/auth";
 import { useKisan } from "@/lib/kisan/store";
 
 export const Route = createFileRoute("/")({
@@ -54,6 +56,7 @@ const roles = [
 
 function Landing() {
   const { language, summary } = useKisan();
+  const { user, logout } = useAuth();
   const hi = language === "hi";
 
   return (
@@ -66,7 +69,7 @@ function Landing() {
           loading="lazy"
         />
         <div className="relative max-w-3xl">
-          <PrototypeBadge tone="dark" label="SIH 2026 · PS 26032 · Prototype Simulation" />
+          <PrototypeBadge tone="dark" label="SIH 2026 · PS 26032 · Live Procurement Orchestration" />
           <h1 className="mt-5 font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
             KISAN SETU
           </h1>
@@ -81,18 +84,42 @@ function Landing() {
               : "Don't just digitize the queue. Predict it, optimize it and orchestrate it."}
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              to="/farmer"
-              className="rounded-xl bg-gradient-leaf px-5 py-3 text-sm font-bold text-primary-foreground transition-transform hover:-translate-y-0.5 focus-ring"
-            >
-              {hi ? "किसान अनुभव खोलें" : "Open farmer experience"}
-            </Link>
-            <Link
-              to="/control-tower"
-              className="rounded-xl border border-primary-foreground/25 bg-primary-foreground/10 px-5 py-3 text-sm font-bold text-primary-foreground backdrop-blur transition-colors hover:bg-primary-foreground/20 focus-ring"
-            >
-              {hi ? "कंट्रोल टावर देखें" : "Enter district control tower"}
-            </Link>
+            {user ? (
+              <>
+                <Link
+                  to={ROLE_PORTALS[user.role] as any}
+                  className="rounded-xl bg-gradient-leaf px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-lg shadow-leaf/30 transition-transform hover:-translate-y-0.5 focus-ring"
+                >
+                  {user.role === "farmer"
+                    ? hi ? "🌾 मेरा किसान पोर्टल खोलें" : "🌾 Open My Farmer Portal"
+                    : user.role === "centre_operator"
+                      ? hi ? "🏢 खरीद केंद्र डैशबोर्ड खोलें" : "🏢 Open Centre Dashboard"
+                      : hi ? "🛰️ कंट्रोल टावर खोलें" : "🛰️ Open Control Tower"}
+                </Link>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="rounded-xl border border-primary-foreground/25 bg-primary-foreground/10 px-5 py-3.5 text-sm font-bold text-primary-foreground backdrop-blur transition-colors hover:bg-primary-foreground/20 focus-ring"
+                >
+                  🚪 {hi ? "साइन आउट" : "Sign Out"}
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="rounded-xl bg-gradient-leaf px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-lg shadow-leaf/30 transition-transform hover:-translate-y-0.5 focus-ring"
+                >
+                  🔐 {hi ? "पोर्टल में प्रवेश करें" : "Sign In to Portal"}
+                </Link>
+                <Link
+                  to="/login"
+                  className="rounded-xl border border-primary-foreground/25 bg-primary-foreground/10 px-5 py-3.5 text-sm font-bold text-primary-foreground backdrop-blur transition-colors hover:bg-primary-foreground/20 focus-ring"
+                >
+                  📝 {hi ? "नया पंजीकरण" : "Register as Farmer"}
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
