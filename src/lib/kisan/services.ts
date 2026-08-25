@@ -848,31 +848,52 @@ export const auditService = {
 export const notificationService = {
   /** Get notifications for a user */
   getForUser: async (userId: string): Promise<Array<{ id: string; title: string; body: string; isRead: boolean; createdAt: string }>> => {
+    if (!userId) return [];
     const { data, error } = await supabase
       .from("notifications")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
-      .limit(20);
-    if (error) throw new Error(`Failed to load notifications: ${error.message}`);
+      .limit(30);
+    if (error) {
+      console.warn("Could not load user notifications:", error.message);
+      return [];
+    }
     return (data || []).map((n) => ({
       id: n.id,
       title: n.title,
       body: n.body,
-      isRead: n.is_read,
+      isRead: Boolean(n.is_read),
       createdAt: n.created_at,
     }));
   },
 
   /** Send a notification */
   send: async (userId: string, title: string, body: string): Promise<void> => {
-    const { error } = await supabase.from("notifications").insert({ user_id: userId, title, body });
-    if (error) throw new Error(`Failed to send notification: ${error.message}`);
+    if (!userId) return;
+    const { error } = await supabase.from("notifications").insert({
+      user_id: userId,
+      title,
+      body,
+      is_read: false,
+    });
+    if (error) console.warn("Failed to send notification:", error.message);
   },
 
-  /** Mark as read */
+  /** Mark a single notification as read */
   markRead: async (notifId: string): Promise<void> => {
     await supabase.from("notifications").update({ is_read: true }).eq("id", notifId);
+  },
+
+  /** Mark all notifications as read for a user */
+  markAllRead: async (userId: string): Promise<void> => {
+    if (!userId) return;
+    await supabase.from("notifications").update({ is_read: true }).eq("user_id", userId);
+  },
+
+  /** Delete a notification */
+  delete: async (notifId: string): Promise<void> => {
+    await supabase.from("notifications").delete().eq("id", notifId);
   },
 };
 

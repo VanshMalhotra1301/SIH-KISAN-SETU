@@ -18,6 +18,7 @@ import {
   centreService,
   farmerService,
   forecastService,
+  notificationService,
   operatorService,
   type OperatorProcessParams,
   paymentService,
@@ -46,6 +47,14 @@ import type {
   WaitAnalyticsPoint,
 } from "./types";
 
+export interface AppNotification {
+  id: string;
+  title: string;
+  body: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 interface KisanState {
   language: Language;
   farmer: Farmer | null;
@@ -61,6 +70,7 @@ interface KisanState {
   waitAnalytics: WaitAnalyticsPoint[];
   throughput: ThroughputPoint[];
   activity: ActivityEvent[];
+  notifications: AppNotification[];
   interventionApplied: boolean;
   overloadTriggered: boolean;
   isLoading: boolean;
@@ -78,6 +88,10 @@ interface KisanActions {
   updateFarmerProfile: (updates: Partial<Farmer>) => Promise<void>;
   operatorProcessTicket: (params: OperatorProcessParams) => Promise<any>;
   operatorUpdateCounters: (centreId: string, activeCounters: number) => Promise<void>;
+  markNotificationRead: (notifId: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
+  deleteNotification: (notifId: string) => Promise<void>;
+  sendNotification: (title: string, body: string, targetUserId?: string) => Promise<void>;
 }
 
 interface KisanContextValue extends KisanState, KisanActions {
@@ -101,6 +115,7 @@ const emptyState: KisanState = {
   waitAnalytics: [],
   throughput: [],
   activity: [],
+  notifications: [],
   interventionApplied: false,
   overloadTriggered: false,
   isLoading: true,
@@ -139,6 +154,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
         forecastService.queueForecast(),                         // 10
         forecastService.waitAnalytics(),                         // 11
         forecastService.throughput(),                             // 12
+        activeUserId ? notificationService.getForUser(activeUserId) : Promise.resolve([]), // 13
       ]);
 
       const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
@@ -161,6 +177,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
         forecast: val(results[10], s.forecast),
         waitAnalytics: val(results[11], s.waitAnalytics),
         throughput: val(results[12], s.throughput),
+        notifications: val(results[13], s.notifications),
         interventionApplied: rec?.status === "approved",
         isLoading: false,
         error: null,
@@ -212,6 +229,13 @@ export function KisanProvider({ children }: { children: ReactNode }) {
         analyticsService.activityFeed()
           .then((activity) => setState((s) => ({ ...s, activity })))
           .catch(() => {});
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, () => {
+        if (user?.id) {
+          notificationService.getForUser(user.id)
+            .then((notifications) => setState((s) => ({ ...s, notifications })))
+            .catch(() => {});
+        }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "centre_alerts", filter: centreFilter ? `centre_id=eq.${user.centreId}` : undefined }, () => {
         analyticsService.alerts()
@@ -379,6 +403,41 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     pushActivity({ kind: "admin", message: `APPROVED · ${shift} appointments re-routed` });
   }, [pushActivity, state.recommendation]);
 
+  const markNotificationRead = useCallback(async (notifId: string) => {
+    setState((s) => ({
+      ...s,
+      notifications: s.notifications.map((n) => (n.id === notifId ? { ...n, isRead: true } : n)),
+    }));
+    await notificationService.markRead(notifId);
+  }, []);
+
+  const markAllNotificationsRead = useCallback(async () => {
+    if (!user?.id) return;
+    setState((s) => ({
+      ...s,
+      notifications: s.notifications.map((n) => ({ ...n, isRead: true })),
+    }));
+    await notificationService.markAllRead(user.id);
+  }, [user?.id]);
+
+  const deleteNotification = useCallback(async (notifId: string) => {
+    setState((s) => ({
+      ...s,
+      notifications: s.notifications.filter((n) => n.id !== notifId),
+    }));
+    await notificationService.delete(notifId);
+  }, []);
+
+  const sendNotification = useCallback(async (title: string, body: string, targetUserId?: string) => {
+    const recipient = targetUserId || user?.id;
+    if (!recipient) return;
+    await notificationService.send(recipient, title, body);
+    if (user?.id) {
+      const notifs = await notificationService.getForUser(user.id);
+      setState((s) => ({ ...s, notifications: notifs }));
+    }
+  }, [user?.id]);
+
   // ─── Computed values ───
 
   const value = useMemo<KisanContextValue>(() => {
@@ -403,6 +462,10 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       updateFarmerProfile,
       operatorProcessTicket,
       operatorUpdateCounters,
+      markNotificationRead,
+      markAllNotificationsRead,
+      deleteNotification,
+      sendNotification,
       summary,
       centreById: (id: string) => centres.find((c) => c.id === id || c.code === id),
       recommendedCentre: centres.find((c) => c.recommended),
@@ -411,6 +474,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     state, setLanguage, toggleLanguage, triggerOverload,
     reviewRecommendation, approveRecommendation, overrideRecommendation,
     refreshFromDatabase, updateFarmerProfile, operatorProcessTicket, operatorUpdateCounters,
+    markNotificationRead, markAllNotificationsRead, deleteNotification, sendNotification,
   ]);
 
   return <KisanContext.Provider value={value}>{children}</KisanContext.Provider>;

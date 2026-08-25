@@ -48,6 +48,48 @@ function FarmerPageGuarded() {
   );
 }
 
+function getNotificationIcon(title: string, body: string) {
+  const combined = (title + " " + body).toLowerCase();
+  if (combined.includes("टोकन") || combined.includes("token") || combined.includes("स्लॉट") || combined.includes("slot") || combined.includes("queue") || combined.includes("कतार")) {
+    return "🎫";
+  }
+  if (combined.includes("तुलाई") || combined.includes("weigh") || combined.includes("वजन") || combined.includes("scale")) {
+    return "⚖️";
+  }
+  if (combined.includes("नमी") || combined.includes("quality") || combined.includes("ग्रेड") || combined.includes("grade") || combined.includes("faq")) {
+    return "🔬";
+  }
+  if (combined.includes("payment") || combined.includes("भुगतान") || combined.includes("रुपये") || combined.includes("dbt") || combined.includes("bank") || combined.includes("खाते")) {
+    return "💰";
+  }
+  if (combined.includes("काउंटर") || combined.includes("counter") || combined.includes("गेट") || combined.includes("gate")) {
+    return "📢";
+  }
+  if (combined.includes("शिकायत") || combined.includes("grievance") || combined.includes("appeal")) {
+    return "⚖️";
+  }
+  return "🌾";
+}
+
+function formatRelativeTime(dateString: string, isHindi: boolean) {
+  try {
+    const d = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 2) return isHindi ? "अभी-अभी" : "Just now";
+    if (diffMins < 60) return isHindi ? `${diffMins} मिनट पहले` : `${diffMins}m ago`;
+    if (diffHours < 24) return isHindi ? `${diffHours} घंटे पहले` : `${diffHours}h ago`;
+    if (diffDays < 7) return isHindi ? `${diffDays} दिन पहले` : `${diffDays}d ago`;
+    return d.toLocaleDateString(isHindi ? "hi-IN" : "en-IN", { month: "short", day: "numeric" });
+  } catch {
+    return dateString;
+  }
+}
+
 type FarmerTab = "home" | "centres" | "queue" | "timeline" | "payments" | "grievances" | "help" | "profile";
 
 export function FarmerPortal() {
@@ -61,6 +103,10 @@ export function FarmerPortal() {
     ticket,
     timeline,
     payment,
+    notifications,
+    markNotificationRead,
+    markAllNotificationsRead,
+    deleteNotification,
     refreshFromDatabase,
     updateFarmerProfile,
     isLoading,
@@ -70,7 +116,6 @@ export function FarmerPortal() {
 
   // Tab navigation state
   const [activeTab, setActiveTab] = useState<FarmerTab>("home");
-  const [notifications, setNotifications] = useState<Array<{ id: string; title: string; body: string; isRead: boolean; createdAt: string }>>([]);
   const [showNotifs, setShowNotifs] = useState(false);
   const [selectedCentre, setSelectedCentre] = useState<ProcurementCentre | null>(null);
   const [availableSlots, setAvailableSlots] = useState<SlotSuggestion[]>([]);
@@ -101,14 +146,16 @@ export function FarmerPortal() {
   const villageName = farmer?.village || user?.village || "";
   const districtName = farmer?.district || user?.district || "";
 
+  // Unread notification count
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
   // Best recommended centre
   const recommendedCentre = centres.find((c) => c.recommended) || centres[0];
   const activeCentre = selectedCentre || recommendedCentre;
 
-  // Load real notifications & farmer grievances
+  // Load farmer grievances
   useEffect(() => {
     if (user?.id) {
-      notificationService.getForUser(user.id).then(setNotifications).catch(() => {});
       grievanceService.list().then((list) => {
         setFarmerGrievances(list.filter((g) => g.farmerId === user.id));
       }).catch(() => {});
@@ -121,6 +168,24 @@ export function FarmerPortal() {
       slotService.listAvailable(activeCentre.id).then(setAvailableSlots).catch(() => {});
     }
   }, [activeCentre?.id]);
+
+  // Handle Notification Item Click
+  const handleNotificationClick = async (notif: { id: string; title: string; body: string; isRead: boolean }) => {
+    if (!notif.isRead) {
+      await markNotificationRead(notif.id);
+    }
+    const combined = (notif.title + " " + notif.body).toLowerCase();
+    if (combined.includes("टोकन") || combined.includes("token") || combined.includes("स्लॉट") || combined.includes("slot") || combined.includes("queue") || combined.includes("कतार")) {
+      setActiveTab("queue");
+    } else if (combined.includes("तुलाई") || combined.includes("weigh") || combined.includes("नमी") || combined.includes("quality") || combined.includes("grade") || combined.includes("टाइमलाइन") || combined.includes("timeline")) {
+      setActiveTab("timeline");
+    } else if (combined.includes("payment") || combined.includes("भुगतान") || combined.includes("dbt") || combined.includes("bill") || combined.includes("invoice") || combined.includes("बिल") || combined.includes("फॉर्म")) {
+      setActiveTab("payments");
+    } else if (combined.includes("शिकायत") || combined.includes("grievance")) {
+      setActiveTab("grievances");
+    }
+    setShowNotifs(false);
+  };
 
   // Handle Slot Booking
   const handleBookSlot = async (slotParam?: { centreId?: string; slotWindow?: string }) => {
@@ -1143,6 +1208,149 @@ export function FarmerPortal() {
             >
               📥 Download / Print Official Receipt
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL 4: REALTIME NOTIFICATIONS DRAWER / PANEL ─── */}
+      {showNotifs && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs animate-fade-in">
+          {/* Backdrop Click Closes */}
+          <div className="absolute inset-0" onClick={() => setShowNotifs(false)} />
+
+          {/* Drawer Container */}
+          <div className="relative z-10 flex h-full w-full max-w-md flex-col bg-card border-l border-border shadow-2xl animate-rise">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-border bg-muted/40 p-4 sm:p-5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-9 items-center justify-center rounded-xl bg-navy text-lg text-primary-foreground shadow-xs">
+                  🔔
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-display text-base font-extrabold text-navy">
+                      {hi ? "लाइव सूचना केंद्र" : "Notifications & Alerts"}
+                    </h3>
+                    {unreadCount > 0 && (
+                      <span className="rounded-full bg-danger px-2 py-0.5 text-[10px] font-black text-white">
+                        {unreadCount} {hi ? "नई" : "New"}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] font-semibold text-muted-foreground">
+                    {hi ? "वास्तविक समय अपडेट एवं सरकारी अलर्ट" : "Real-time updates & official alerts"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={markAllNotificationsRead}
+                    title={hi ? "सभी को पढ़ा हुआ चिह्नित करें" : "Mark all as read"}
+                    className="rounded-lg bg-card border border-border px-2.5 py-1 text-[11px] font-bold text-navy hover:bg-muted focus-ring"
+                  >
+                    ✓ {hi ? "सभी पढ़ें" : "Mark all read"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowNotifs(false)}
+                  className="flex size-8 items-center justify-center rounded-lg border border-border bg-card text-xs font-bold text-muted-foreground hover:text-navy focus-ring"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Notification Items List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {notifications.length > 0 ? (
+                notifications.map((n) => {
+                  const icon = getNotificationIcon(n.title, n.body);
+                  const timeAgo = formatRelativeTime(n.createdAt, hi);
+
+                  return (
+                    <div
+                      key={n.id}
+                      onClick={() => handleNotificationClick(n)}
+                      className={cn(
+                        "group relative flex cursor-pointer gap-3 rounded-2xl border p-4 transition-all hover:scale-[1.01] hover:shadow-md",
+                        n.isRead
+                          ? "border-border bg-card/60 opacity-80"
+                          : "border-leaf/50 bg-leaf-soft/40 shadow-xs ring-1 ring-leaf/30"
+                      )}
+                    >
+                      {/* Category Icon */}
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-card border border-border text-lg shadow-xs">
+                        {icon}
+                      </span>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className={cn("font-display text-xs font-extrabold", n.isRead ? "text-navy" : "text-navy font-black")}>
+                            {n.title}
+                          </h4>
+                          <span className="shrink-0 text-[10px] font-semibold text-muted-foreground whitespace-nowrap">
+                            {timeAgo}
+                          </span>
+                        </div>
+
+                        <p className="mt-1 text-xs text-foreground/80 leading-relaxed font-medium">
+                          {n.body}
+                        </p>
+
+                        <div className="mt-2.5 flex items-center justify-between text-[10px] font-bold text-leaf">
+                          <span className="group-hover:underline">
+                            {hi ? "विवरण देखें →" : "View details →"}
+                          </span>
+                          {!n.isRead && (
+                            <span className="flex items-center gap-1 text-leaf font-extrabold">
+                              <span className="size-1.5 rounded-full bg-leaf animate-blip" />
+                              {hi ? "नया" : "Unread"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Delete Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteNotification(n.id);
+                        }}
+                        title={hi ? "हटाएँ" : "Delete"}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-muted-foreground hover:text-danger p-1"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="flex flex-col items-center justify-center h-64 text-center p-6 space-y-3">
+                  <span className="text-4xl">🔔</span>
+                  <p className="font-display text-sm font-extrabold text-navy">
+                    {hi ? "कोई नई सूचना नहीं है" : "All Caught Up!"}
+                  </p>
+                  <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
+                    {hi
+                      ? "स्लॉट बुकिंग, तुलाई प्रगति, डिजिटल बिल या डीबीटी भुगतान से संबंधित अलर्ट तुरंत यहाँ दिखाई देंगे।"
+                      : "Real-time alerts regarding slot confirmations, weighment slips, and DBT payouts will appear here automatically."}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-border bg-muted/30 p-3 text-center">
+              <p className="text-[10px] font-bold text-muted-foreground">
+                ⚡ {hi ? "सुपरबेस रियल-टाइम लाइव कनेक्टेड" : "Supabase Realtime Live Connected"}
+              </p>
+            </div>
           </div>
         </div>
       )}
