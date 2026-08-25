@@ -45,6 +45,7 @@ export interface ProcurementCentre {
   recommended?: boolean;
   recommendationReasons?: string[];
   recommendationReasonsHi?: string[];
+  status?: "active" | "inactive";
 }
 
 export interface SlotSuggestion {
@@ -63,7 +64,8 @@ export interface QueueTicket {
   slotWindow: string;
   farmersAhead: number;
   etaMinutes: number;
-  status: "scheduled" | "en_route" | "in_queue" | "at_counter" | "done";
+  stage?: string;
+  counterAssigned?: number;
 }
 
 export type TimelineState = "done" | "active" | "upcoming";

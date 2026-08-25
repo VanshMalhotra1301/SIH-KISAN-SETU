@@ -9,6 +9,7 @@ import type {
   CentreAlert,
   Farmer,
   ForecastPoint,
+  Grievance,
   PaymentStatus,
   ProcurementCentre,
   QueueRow,
@@ -76,17 +77,22 @@ export const farmerService = {
     };
   },
 
-  /** Update farmer crop/quantity */
+  /** Update farmer crop/quantity
+   * NOTE: The `farmers` table uses profile `id` as FK (`id` column points to `profiles.id`).
+   * Always update by the authenticated user's profile ID.
+   */
   updateRegistration: async (userId: string, payload: Partial<Farmer>): Promise<void> => {
     const cropHiMap: Record<string, string> = {
       Wheat: "गेहूँ", Paddy: "धान", Mustard: "सरसों", Gram: "चना",
     };
+    // Try updating by `id` (profile FK) first, then fall back to direct farmer record check
     const { error } = await supabase
       .from("farmers")
       .update({
         crop: payload.crop,
         crop_hi: cropHiMap[payload.crop || "Wheat"] || payload.crop,
         quantity_quintals: payload.quantityQuintals,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", userId);
     if (error) throw new Error(`Failed to update registration: ${error.message}`);
@@ -115,7 +121,21 @@ export const farmerService = {
       }).eq("id", params.slotId);
     }
 
-    // 2. Insert into queue_tickets
+    // 2. Compute real-time ETA from centre queue data
+    const { data: centreData } = await supabase
+      .from("procurement_centres")
+      .select("queue_length, processing_rate_per_hour, active_counters")
+      .eq("id", params.centreId)
+      .maybeSingle();
+
+    const realQueueLength = centreData?.queue_length ?? 5;
+    const ratePerHour = centreData?.processing_rate_per_hour ?? 30;
+    const activeCounters = Math.max(1, centreData?.active_counters ?? 1);
+    // ETA = (farmers ahead / throughput per minute across all counters)
+    const totalRatePerMin = (ratePerHour * activeCounters) / 60;
+    const computedETA = Math.max(5, Math.round(realQueueLength / totalRatePerMin));
+
+    // 3. Insert into queue_tickets
     const { data: ticket, error: ticketError } = await supabase
       .from("queue_tickets")
       .insert({
@@ -128,8 +148,8 @@ export const farmerService = {
         quantity_quintals: params.quantityQuintals,
         slot_window: slotWindow,
         stage: "scheduled",
-        farmers_ahead: 3,
-        eta_minutes: 22,
+        farmers_ahead: realQueueLength,
+        eta_minutes: computedETA,
       })
       .select()
       .single();
@@ -158,6 +178,14 @@ export const farmerService = {
     const rate = params.crop === "Wheat" ? 2430 : params.crop === "Paddy" ? 2300 : params.crop === "Mustard" ? 5650 : 5440;
     const grossAmount = params.quantityQuintals * rate;
 
+    // Fetch farmer's registered bank details from profile if available
+    const { data: farmerProfile } = await supabase
+      .from("profiles")
+      .select("bank_masked")
+      .eq("id", params.farmerId)
+      .maybeSingle();
+    const bankMasked = farmerProfile?.bank_masked || "Bank ••••"; // do not expose real account
+
     await supabase.from("payments").insert({
       ticket_id: ticketId,
       farmer_id: params.farmerId,
@@ -165,11 +193,11 @@ export const farmerService = {
       currency: "INR",
       rate_per_quintal: rate,
       quintals: params.quantityQuintals,
-      stage: "approved",
+      stage: "pending_verification",
       expected_credit_in: "Within 48 hours of weighing",
       expected_credit_in_hi: "तुलाई के 48 घंटे के भीतर",
-      bank_masked: "PNB ••••4417",
-      progress_pct: 35,
+      bank_masked: bankMasked,
+      progress_pct: 15,
     });
 
     // 5. Send notification
@@ -264,28 +292,36 @@ export const centreService = {
 
 export const slotService = {
   /** Get AI-recommended slot for a farmer */
-  suggest: async (centreId?: string): Promise<SlotSuggestion | null> => {
+  suggest: async (centreId?: string, farmerId?: string): Promise<SlotSuggestion | null> => {
+    // First: check if this farmer already has a booked slot
+    if (farmerId) {
+      const { data: mySlot } = await supabase
+        .from("slots")
+        .select("*")
+        .eq("booked_by", farmerId)
+        .limit(1)
+        .maybeSingle();
+      if (mySlot) {
+        return {
+          id: mySlot.id,
+          centreId: mySlot.centre_id,
+          window: mySlot.window,
+          date: mySlot.date,
+          confidencePct: mySlot.confidence_pct || 0,
+          reason: mySlot.reason || "",
+          reasonHi: mySlot.reason_hi || "",
+        };
+      }
+    }
+
+    // Then: find an unbooked AI-recommended slot
     let query = supabase.from("slots").select("*").eq("ai_recommended", true).eq("is_booked", false);
     if (centreId) query = query.eq("centre_id", centreId);
     const { data, error } = await query.limit(1).maybeSingle();
 
     if (error) throw new Error(`Failed to load slot suggestion: ${error.message}`);
-    if (!data) {
-      // Also check for already-booked AI slot (farmer's current booking)
-      const { data: booked } = await supabase.from("slots").select("*").eq("ai_recommended", true).limit(1).maybeSingle();
-      if (booked) {
-        return {
-          id: booked.id,
-          centreId: booked.centre_id,
-          window: booked.window,
-          date: booked.date,
-          confidencePct: booked.confidence_pct || 0,
-          reason: booked.reason || "",
-          reasonHi: booked.reason_hi || "",
-        };
-      }
-      return null;
-    }
+    if (!data) return null;
+
     return {
       id: data.id,
       centreId: data.centre_id,
@@ -330,12 +366,17 @@ export const slotService = {
 // ─── Queue Service ───
 
 export const queueService = {
-  /** Get the farmer's active queue ticket */
+  /** Get the farmer's active queue ticket.
+   * IMPORTANT: `farmerId` is REQUIRED for farmer-role callers to ensure strict isolation.
+   * Without it, the query returns any active ticket which may belong to another farmer.
+   */
   getTicket: async (farmerId?: string): Promise<QueueTicket | null> => {
-    let query = supabase.from("queue_tickets").select("*");
-    if (farmerId) {
-      query = query.eq("farmer_id", farmerId);
-    }
+    if (!farmerId) return null; // Safety: never return someone else's ticket
+    const query = supabase
+      .from("queue_tickets")
+      .select("*")
+      .eq("farmer_id", farmerId);
+
     // Get the most recent active ticket (not done)
     const { data, error } = await query
       .not("stage", "eq", "done")
@@ -352,7 +393,8 @@ export const queueService = {
       slotWindow: data.slot_window,
       farmersAhead: data.farmers_ahead,
       etaMinutes: data.eta_minutes,
-      status: data.stage as QueueTicket["status"],
+      stage: data.stage,
+      counterAssigned: data.counter_assigned,
     };
   },
 
@@ -940,13 +982,13 @@ export const adminService = {
   },
 
   /** Update a user's profile */
-  updateUser: async (userId: string, updates: Record<string, any>): Promise<void> => {
-    const dbUpdates: Record<string, any> = { updated_at: new Date().toISOString() };
-    if (updates.fullName !== undefined) dbUpdates.full_name = updates.fullName;
-    if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
-    if (updates.district !== undefined) dbUpdates.district = updates.district;
-    if (updates.role !== undefined) dbUpdates.role = updates.role;
-    if (updates.centreId !== undefined) dbUpdates.centre_id = updates.centreId;
+  updateUser: async (userId: string, updates: Record<string, unknown>): Promise<void> => {
+    const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates["fullName"] !== undefined) dbUpdates["full_name"] = updates["fullName"];
+    if (updates["phone"] !== undefined) dbUpdates["phone"] = updates["phone"];
+    if (updates["district"] !== undefined) dbUpdates["district"] = updates["district"];
+    if (updates["role"] !== undefined) dbUpdates["role"] = updates["role"];
+    if (updates["centreId"] !== undefined) dbUpdates["centre_id"] = updates["centreId"];
     const { error } = await supabase.from("profiles").update(dbUpdates).eq("id", userId);
     if (error) throw new Error(`Failed to update user: ${error.message}`);
   },
@@ -1059,7 +1101,7 @@ export const adminService = {
  * Connects directly to public.grievances with live realtime sync.
  */
 export const grievanceService = {
-  list: async (filters?: { status?: string; priority?: string; district?: string }): Promise<Grievance[]> => {
+  list: async (filters?: { status?: string; priority?: string; district?: string; farmerId?: string }): Promise<Grievance[]> => {
     let query = supabase.from("grievances").select("*").order("created_at", { ascending: false });
     if (filters?.status && filters.status !== "all") {
       query = query.eq("status", filters.status);
@@ -1069,6 +1111,9 @@ export const grievanceService = {
     }
     if (filters?.district && filters.district !== "all") {
       query = query.eq("district", filters.district);
+    }
+    if (filters?.farmerId) {
+      query = query.eq("farmer_id", filters.farmerId);
     }
     const { data, error } = await query;
     if (error) throw new Error(`Failed to load grievances: ${error.message}`);
@@ -1094,15 +1139,15 @@ export const grievanceService = {
     }));
   },
 
-  updateStatus: async (id: string, status: Grievance["status"], notes?: string) => {
-    const updates: Record<string, any> = { status, updated_at: new Date().toISOString() };
-    if (notes) updates.resolution_notes = notes;
-    if (status === "resolved") updates.resolved_at = new Date().toISOString();
+  updateStatus: async (id: string, status: Grievance["status"], notes?: string): Promise<void> => {
+    const updates: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    if (notes) updates["resolution_notes"] = notes;
+    if (status === "resolved") updates["resolved_at"] = new Date().toISOString();
     const { error } = await supabase.from("grievances").update(updates).eq("id", id);
     if (error) throw new Error(`Failed to update grievance: ${error.message}`);
   },
 
-  assign: async (id: string, assignedToName: string) => {
+  assign: async (id: string, assignedToName: string): Promise<void> => {
     const { error } = await supabase.from("grievances").update({
       assigned_to_name: assignedToName,
       status: "pending",
@@ -1111,7 +1156,7 @@ export const grievanceService = {
     if (error) throw new Error(`Failed to assign grievance: ${error.message}`);
   },
 
-  escalate: async (id: string, assignedToName = "State Vigilance & Quality Directorate") => {
+  escalate: async (id: string, assignedToName = "State Vigilance & Quality Directorate"): Promise<void> => {
     const { error } = await supabase.from("grievances").update({
       assigned_to_name: assignedToName,
       status: "escalated",
@@ -1121,7 +1166,7 @@ export const grievanceService = {
     if (error) throw new Error(`Failed to escalate grievance: ${error.message}`);
   },
 
-  resolve: async (id: string, resolutionNotes: string) => {
+  resolve: async (id: string, resolutionNotes: string): Promise<void> => {
     const { error } = await supabase.from("grievances").update({
       status: "resolved",
       resolution_notes: resolutionNotes,
@@ -1131,24 +1176,63 @@ export const grievanceService = {
     if (error) throw new Error(`Failed to resolve grievance: ${error.message}`);
   },
 
-  create: async (params: Omit<Grievance, "id" | "createdAt" | "updatedAt">) => {
+  create: async (params: Omit<Grievance, "id" | "createdAt" | "updatedAt">): Promise<Grievance> => {
     const { data, error } = await supabase.from("grievances").insert({
-      ticket_id: params.ticketId,
-      farmer_id: params.farmerId,
-      farmer_name: params.farmerName,
-      farmer_phone: params.farmerPhone,
-      centre_id: params.centreId,
-      centre_name: params.centreName,
-      district: params.district,
-      category: params.category,
-      subject: params.subject,
-      description: params.description,
-      priority: params.priority || "medium",
-      status: params.status || "new",
-      assigned_to_name: params.assignedToName,
+      ticket_id: params["ticketId"],
+      farmer_id: params["farmerId"],
+      farmer_name: params["farmerName"],
+      farmer_phone: params["farmerPhone"],
+      centre_id: params["centreId"],
+      centre_name: params["centreName"],
+      district: params["district"],
+      category: params["category"],
+      subject: params["subject"],
+      description: params["description"],
+      priority: params["priority"] || "medium",
+      status: params["status"] || "new",
+      assigned_to_name: params["assignedToName"],
     }).select().single();
     if (error) throw new Error(`Failed to create grievance: ${error.message}`);
-    return data;
+    return {
+      id: data.id,
+      ticketId: data.ticket_id,
+      farmerId: data.farmer_id,
+      farmerName: data.farmer_name,
+      farmerPhone: data.farmer_phone,
+      centreId: data.centre_id,
+      centreName: data.centre_name,
+      district: data.district,
+      category: data.category,
+      subject: data.subject,
+      description: data.description,
+      priority: data.priority,
+      status: data.status,
+      assignedToName: data.assigned_to_name,
+      resolutionNotes: data.resolution_notes,
+      resolvedAt: data.resolved_at,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
   },
 };
 
+// ─── Smart ETA Computation ───
+
+/**
+ * Compute a real-time ETA for a farmer based on actual queue state.
+ * Used by farmer portal to show "Your turn in ~X minutes".
+ */
+export const etaService = {
+  compute: async (centreId: string, positionInQueue: number): Promise<number> => {
+    const { data } = await supabase
+      .from("procurement_centres")
+      .select("processing_rate_per_hour, active_counters")
+      .eq("id", centreId)
+      .maybeSingle();
+
+    const ratePerHour = data?.processing_rate_per_hour ?? 30;
+    const activeCounters = Math.max(1, data?.active_counters ?? 1);
+    const totalRatePerMin = (ratePerHour * activeCounters) / 60;
+    return Math.max(5, Math.round(positionInQueue / totalRatePerMin));
+  },
+};

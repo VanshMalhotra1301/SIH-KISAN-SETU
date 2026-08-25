@@ -600,15 +600,15 @@ export function LandingPage() {
           <div className="rounded-2xl border border-leaf/40 bg-leaf-soft/50 p-5 space-y-2 animate-rise">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black uppercase tracking-wider text-leaf">
-                {voiceDemos[activeVoicePrompt].tag}
+                {voiceDemos[activeVoicePrompt]?.tag}
               </span>
               <span className="text-xs font-bold text-navy">Language: Hindi / English</span>
             </div>
             <p className="font-display text-sm font-black text-navy">
-              Farmer: “{voiceDemos[activeVoicePrompt].q}” ({voiceDemos[activeVoicePrompt].qEn})
+              Farmer: “{voiceDemos[activeVoicePrompt]?.q}” ({voiceDemos[activeVoicePrompt]?.qEn})
             </p>
             <p className="text-xs text-foreground font-semibold leading-relaxed pt-1">
-              🤖 Sahayak: {voiceDemos[activeVoicePrompt].a}
+              🤖 Sahayak: {voiceDemos[activeVoicePrompt]?.a}
             </p>
           </div>
         </div>

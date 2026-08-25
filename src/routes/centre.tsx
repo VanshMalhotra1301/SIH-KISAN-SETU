@@ -12,6 +12,7 @@ import {
   StatCard,
 } from "@/components/kisan/primitives";
 import { centreHealth, useKisan } from "@/lib/kisan/store";
+import { notificationService } from "@/lib/kisan/services";
 import type { CentreAlert, ProcurementCentre, QueueRow } from "@/lib/kisan/types";
 import { cn } from "@/lib/utils";
 
@@ -195,18 +196,50 @@ function CentrePage() {
       if (action === "call") {
         setSuccessBanner(hi ? `📢 टोकन ${selectedTicket.token} को काउंटर #${counterInput} पर बुलाया गया` : `📢 Token ${selectedTicket.token} called to Counter #${counterInput}`);
         setModalStage("weigh");
+        // Notify farmer in real-time via app notification (PS-26032 requirement)
+        if (selectedTicket.farmerId) {
+          notificationService.send(
+            selectedTicket.farmerId,
+            `📢 आपका टॉकन ${selectedTicket.token} — काउंटर #${counterInput}`,
+            `कृपया तुरंत निर्धारित काउंटर पर पहुँचें एवं इलेक्ट्रॉनिक तुलाई के लिए तैयार रहें। (Token ${selectedTicket.token} called to Counter #${counterInput})`,
+          ).catch(() => {}); // Non-blocking — don't fail the whole action if notification fails
+        }
       } else if (action === "weigh") {
         setSuccessBanner(hi ? `⚖️ धर्मकांटा तुलाई दर्ज: ${netQuintals} क्विंटल शुद्ध` : `⚖️ Weighment saved: ${netQuintals} qtl net recorded`);
         setModalStage("grade");
+        if (selectedTicket.farmerId) {
+          notificationService.send(
+            selectedTicket.farmerId,
+            `⚖️ तुलाई पूर्ण — ${netQuintals} क्विंटल दर्ज`,
+            `टोकन ${selectedTicket.token}: सकल ${netQuintals} क्विंटल दर्ज। अब गुणवत्ता (FAQ) परीक्षण शुरू होगा। (Weighment complete: ${netQuintals} qtl net)`,
+          ).catch(() => {});
+        }
       } else if (action === "grade") {
         setSuccessBanner(hi ? `🔬 गुणवत्ता परीक्षण सफल: ग्रेड ${qualityGradeInput}` : `🔬 Quality inspected: Grade ${qualityGradeInput}`);
         setModalStage("complete");
       } else if (action === "complete" || action === "accept") {
-        setSuccessBanner(hi ? `🎉 खरीद पूर्ण! बिल: ${res.j_form_no} | भुगतान ₹${res.gross_amount.toLocaleString("en-IN")} कतारबद्ध` : `🎉 Completed! Invoice: ${res.j_form_no} | Payment ₹${res.gross_amount.toLocaleString("en-IN")} queued`);
+        const grossAmt = res?.gross_amount ?? 0;
+        setSuccessBanner(hi ? `🎉 खरीद पूर्ण! बिल: ${res?.j_form_no ?? "—"} | भुगतान ₹${grossAmt.toLocaleString("en-IN")} कतारबद्ध` : `🎉 Completed! Invoice: ${res?.j_form_no ?? "—"} | Payment ₹${grossAmt.toLocaleString("en-IN")} queued`);
         setSelectedTicket(null);
+        // Notify farmer about successful procurement and payment initiation
+        if (selectedTicket.farmerId) {
+          notificationService.send(
+            selectedTicket.farmerId,
+            `🎉 खरीद स्वीकृत — डीबीटी भुगतान शुरू`,
+            `टोकन ${selectedTicket.token}: आपकी ${selectedTicket.crop} की फसल स्वीकृत। ₹${grossAmt.toLocaleString("en-IN")} की राशि 48 घंटे में आपके बैंक खाते में जमा होगी।`,
+          ).catch(() => {});
+        }
       } else if (action === "reject") {
         setSuccessBanner(hi ? `⚠️ टोकन ${selectedTicket.token} अस्वीकृत किया गया` : `⚠️ Token ${selectedTicket.token} rejected`);
         setSelectedTicket(null);
+        // Notify farmer about rejection so they can file grievance
+        if (selectedTicket.farmerId) {
+          notificationService.send(
+            selectedTicket.farmerId,
+            `⚠️ खरीद अस्वीकृत — शिकायत दर्ज करें`,
+            `टोकन ${selectedTicket.token}: आपकी फसल गुणवत्ता परीक्षण में अस्वीकृत हुई। कारण जानने एवं अपील के लिए किसान पोर्टल में शिकायत दर्ज करें।`,
+          ).catch(() => {});
+        }
       }
 
       await refreshFromDatabase();
@@ -238,7 +271,7 @@ function CentrePage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `KisanSetu_Centre_${activeCentre.code}_Daily_Register.csv`);
+    link.setAttribute("download", `KisanSetu_Centre_${activeCentre?.code || "Unknown"}_Daily_Register.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

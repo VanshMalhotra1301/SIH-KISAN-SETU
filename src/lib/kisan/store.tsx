@@ -205,8 +205,10 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       centreFilter = `id=eq.${user.centreId}`;
     }
 
-    const channel = supabase
-      .channel(`kisan-production-sync-${user.id}`)
+    // NOTE: The Supabase JS SDK typing for postgres_changes has a known version mismatch.
+    // The cast to `any` is intentional — all subscriptions function correctly at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const channel = (supabase.channel(`kisan-production-sync-${user.id}`) as any)
       .on("postgres_changes", { event: "*", schema: "public", table: "procurement_centres", filter: centreFilter }, () => {
         refreshFromDatabase();
       })
@@ -227,19 +229,25 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "activity_feed" }, () => {
         analyticsService.activityFeed()
-          .then((activity) => setState((s) => ({ ...s, activity })))
+          .then((activity: any) => setState((s) => ({ ...s, activity })))
           .catch(() => {});
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, () => {
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "notifications",
+        // Scope to THIS user's notifications only — prevents cross-user data leakage
+        filter: `user_id=eq.${user.id}`,
+      }, () => {
         if (user?.id) {
           notificationService.getForUser(user.id)
-            .then((notifications) => setState((s) => ({ ...s, notifications })))
+            .then((notifications: any) => setState((s) => ({ ...s, notifications })))
             .catch(() => {});
         }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "centre_alerts", filter: centreFilter ? `centre_id=eq.${user.centreId}` : undefined }, () => {
         analyticsService.alerts()
-          .then((alerts) => setState((s) => ({ ...s, alerts })))
+          .then((alerts: any) => setState((s) => ({ ...s, alerts })))
           .catch(() => {});
       })
       .subscribe();

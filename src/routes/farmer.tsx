@@ -17,9 +17,9 @@ import { centreHealth, useKisan } from "@/lib/kisan/store";
 import {
   auditService,
   centreService,
+  etaService,
   farmerService,
   grievanceService,
-  notificationService,
   slotService,
 } from "@/lib/kisan/services";
 import { speak, type SahayakAction } from "@/lib/kisan/voice";
@@ -153,12 +153,10 @@ export function FarmerPortal() {
   const recommendedCentre = centres.find((c) => c.recommended) || centres[0];
   const activeCentre = selectedCentre || recommendedCentre;
 
-  // Load farmer grievances
+  // Load farmer grievances — scoped to this farmer only via DB filter
   useEffect(() => {
     if (user?.id) {
-      grievanceService.list().then((list) => {
-        setFarmerGrievances(list.filter((g) => g.farmerId === user.id));
-      }).catch(() => {});
+      grievanceService.list({ farmerId: user.id }).then(setFarmerGrievances).catch(() => {});
     }
   }, [user?.id, ticket?.token]);
 
@@ -189,6 +187,10 @@ export function FarmerPortal() {
 
   // Handle Slot Booking
   const handleBookSlot = async (slotParam?: { centreId?: string; slotWindow?: string }) => {
+    if (!user?.id) {
+      alert("You must be logged in to book a slot.");
+      return;
+    }
     const targetCentre = slotParam?.centreId ? centres.find((c) => c.id === slotParam.centreId) : activeCentre;
     if (!targetCentre) {
       alert("No procurement centre is selected or available.");
@@ -199,9 +201,9 @@ export function FarmerPortal() {
     setBookingInProgress(true);
     try {
       const res = await farmerService.bookProcurementJourney({
-        farmerId: user?.id || farmer?.id || "e7099e71-0316-40b1-8337-add01ad98f65",
+        farmerId: user.id,
         farmerName: displayName,
-        village: villageName || "Danapur",
+        village: villageName || "",
         crop: registeredCrop,
         quantityQuintals: registeredQuantity,
         centreId: targetCentre.id,
@@ -232,6 +234,10 @@ export function FarmerPortal() {
   // Handle Grievance Submission
   const handleSubmitGrievance = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user?.id) {
+      alert("You must be logged in to submit a grievance.");
+      return;
+    }
     if (!grievanceSubject || !grievanceDescription) {
       alert("Please enter both subject and details.");
       return;
@@ -239,12 +245,12 @@ export function FarmerPortal() {
     setIsSubmittingGrievance(true);
     try {
       await grievanceService.create({
-        farmerId: user?.id || farmer?.id || "e7099e71-0316-40b1-8337-add01ad98f65",
+        farmerId: user.id,
         farmerName: displayName,
-        farmerPhone: user?.phone || "+91 98765 43210",
-        centreId: activeCentre?.id,
-        centreName: activeCentre?.name,
-        district: districtName || "Karnal",
+        farmerPhone: user?.phone || "",
+        centreId: activeCentre?.id || "",
+        centreName: activeCentre?.name || "",
+        district: districtName || "",
         category: grievanceCategory,
         subject: grievanceSubject,
         description: grievanceDescription,
@@ -252,8 +258,9 @@ export function FarmerPortal() {
         status: "new",
       });
 
-      const updated = await grievanceService.list();
-      setFarmerGrievances(updated.filter((g) => g.farmerId === user?.id));
+      // Reload grievances using DB-side filter
+      const updated = await grievanceService.list({ farmerId: user.id });
+      setFarmerGrievances(updated);
       setShowGrievanceModal(false);
       setGrievanceSubject("");
       setGrievanceDescription("");

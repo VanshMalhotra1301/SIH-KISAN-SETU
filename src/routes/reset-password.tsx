@@ -59,9 +59,11 @@ function ResetPassword() {
         <div className="surface p-8">
           <div className="text-center">
             <span className="text-4xl">🔑</span>
-            <SectionLabel className="mt-4 justify-center">
-              {hi ? "पासवर्ड रीसेट" : "Password Reset"}
-            </SectionLabel>
+            <div className="mt-4 flex justify-center">
+              <SectionLabel>
+                {hi ? "पासवर्ड रीसेट" : "Password Reset"}
+              </SectionLabel>
+            </div>
             <h1 className="mt-2 font-display text-2xl font-extrabold text-navy">
               {hi ? "नया पासवर्ड बनाएँ" : "Create New Password"}
             </h1>

@@ -274,6 +274,14 @@ export function processSahayakQuery(
   if (hasAny(["कम भीड़", "kam bheed", "bheed", "congestion", "sabse kam", "nearest", "best centre", "दूसरा centre", "alternative"])) {
     sessionState.lastTopic = "centre";
     const best = leastCongestedCentre;
+    if (!best) {
+      return {
+        text: hi ? "अभी केंद्र की जानकारी उपलब्ध नहीं है। कृपया कुछ देर बाद पुनः प्रयास करें।" : "Centre data is not available right now. Please try again in a moment.",
+        speechText: hi ? "केंद्र की जानकारी उपलब्ध नहीं है।" : "Centre data is not available right now.",
+        navigationTarget: "centres",
+        facts: [],
+      };
+    }
     sessionState.lastReferencedCentreId = best.id;
     sessionState.lastReferencedCentreName = best.name;
 

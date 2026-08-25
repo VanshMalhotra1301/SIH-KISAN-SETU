@@ -1,0 +1,53 @@
+{
+  "name": "KISAN SETU — Government Crop Procurement",
+  "short_name": "Kisan Setu",
+  "description": "AI-powered government crop procurement platform. Book slots, track queue, monitor payments — from registration to payment without the uncertainty.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f1a2e",
+  "theme_color": "#1c2b52",
+  "lang": "hi",
+  "dir": "ltr",
+  "categories": ["government", "agriculture", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Farmer Portal",
+      "short_name": "My Portal",
+      "description": "Access your procurement journey",
+      "url": "/farmer",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Centre Workstation",
+      "short_name": "Workstation",
+      "description": "Operator queue management",
+      "url": "/centre",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Control Tower",
+      "short_name": "Control Tower",
+      "description": "District admin live dashboard",
+      "url": "/control-tower",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ],
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
