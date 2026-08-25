@@ -12,7 +12,6 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { AuthProvider } from "../hooks/use-auth";
 import { KisanProvider } from "../lib/kisan/store";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
   return (
@@ -39,10 +38,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error("Root Error Boundary Caught:", error);
   const router = useRouter();
-
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -89,17 +84,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "KISAN SETU — Predictive Crop Procurement" },
+      { title: "KISAN SETU — Smart Government Crop Procurement Platform" },
       {
         name: "description",
         content:
-          "From registration to procurement to payment — without the uncertainty. Predictive queue and slot orchestration for crop procurement centres.",
+          "Digital Public Infrastructure for Crop Procurement: Smart centre recommendation, guaranteed slots, virtual queues, PFMS DBT tracking, and predictive governance.",
       },
-      { name: "author", content: "KISAN SETU" },
-      { property: "og:title", content: "KISAN SETU — Predictive Crop Procurement" },
+      { name: "author", content: "Ministry of Consumer Affairs, Food & Public Distribution | KISAN SETU" },
+      { property: "og:title", content: "KISAN SETU — Smart Government Crop Procurement Platform" },
       {
         property: "og:description",
-        content: "Don't just digitize the queue. Predict it, optimize it and orchestrate it.",
+        content: "From registration to procurement to payment — without the uncertainty.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -115,7 +110,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap",
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "alternate icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "apple-touch-icon", href: "/favicon.svg" },
     ],
   }),
   shellComponent: RootShell,

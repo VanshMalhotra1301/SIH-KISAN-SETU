@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Kisan Setu Official Emblem: Sprout & Wheat Stalk with Emerald Green and Golden Saffron -->
+  <rect width="64" height="64" rx="16" fill="#1B254B"/>
+  <circle cx="32" cy="32" r="26" fill="#131B38" stroke="#22C55E" stroke-width="1.5" stroke-dasharray="2 2"/>
+  
+  <!-- Left Sprout Leaf (Emerald Leaf) -->
+  <path d="M32 44C32 44 20 38 18 26C16 16 28 14 30 18C31.5 21 32 30 32 44Z" fill="url(#leaf-grad)"/>
+  
+  <!-- Right Wheat Leaf & Grains (Golden Saffron) -->
+  <path d="M32 44C32 44 44 38 46 26C48 16 36 14 34 18C32.5 21 32 30 32 44Z" fill="url(#saffron-grad)"/>
+  
+  <!-- Center Golden Stalk -->
+  <path d="M32 48V16" stroke="#EAB308" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Wheat Grains -->
+  <circle cx="32" cy="14" r="3.5" fill="#FACC15"/>
+  <circle cx="27" cy="22" r="3" fill="#EAB308"/>
+  <circle cx="37" cy="22" r="3" fill="#EAB308"/>
+  <circle cx="28" cy="30" r="3" fill="#CA8A04"/>
+  <circle cx="36" cy="30" r="3" fill="#CA8A04"/>
+  
+  <!-- Base Ground Foundation -->
+  <path d="M22 48C26 51 38 51 42 48" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round"/>
+
+  <defs>
+    <linearGradient id="leaf-grad" x1="18" y1="14" x2="32" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4ADE80"/>
+      <stop offset="1" stop-color="#16A34A"/>
+    </linearGradient>
+    <linearGradient id="saffron-grad" x1="46" y1="14" x2="32" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FDE047"/>
+      <stop offset="1" stop-color="#D97706"/>
+    </linearGradient>
+  </defs>
+</svg>

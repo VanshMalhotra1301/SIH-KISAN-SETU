@@ -1,188 +1,80 @@
-# Kisan Setu Connect
+# KISAN SETU (किसान सेतु)
+### AI-Powered Crop Procurement Intelligence Platform
+**Government of India · Ministry of Consumer Affairs, Food & Public Distribution**  
+*Smart India Hackathon 2026 — Problem Statement 26032*
 
-Build KISAN SETU — a premium, award-winning frontend MVP for Smart India Hackathon 2026 Problem Statement 26032.
+> “From registration to procurement to payment — without the uncertainty.”
 
-Create ONLY the frontend. No database, no backend, no complex infrastructure. Use realistic local demo data + frontend state, but keep everything API-ready for future REST/WebSocket connectivity.
+---
 
-Make it look EXTREMELY premium — modern GovTech + AI SaaS, not a student project. Use React + TypeScript + Tailwind, beautiful responsive CSS, Inter/Manrope typography, refined navy/white/green/saffron palette, subtle gradients, elegant shadows, smooth micro-animations, premium charts, maps and polished empty/loading states.
+## 🌾 Overview
 
-Create 3 connected role experiences:
+**KISAN SETU** is a Digital Public Infrastructure (DPI) platform designed to modernize agricultural procurement across India. By replacing uncoordinated physical mandi road queues with predictive arrival scheduling, electronic weighbridge integration, quality verification, and direct PFMS DBT transfers, Kisan Setu eliminates waiting bottlenecks and ensures 100% transparency for farmers and administrators.
 
-1. FARMER
+---
 
-Mobile-first, extremely simple for low-literacy users.
+## 🏛️ Platform Architecture & Stakeholder Portals
 
-- Hindi/English
+| Portal | Route | Primary Capabilities |
+|---|---|---|
+| **Farmer Companion** | `/farmer` | Smart centre recommendation, guaranteed slot booking, live virtual queue, electronic weighment slip, DBT payment tracking, grievance redressal desk, and multilingual AI Sahayak. |
+| **Centre Operations** | `/centre` | Live yard queue table, electronic weighbridge scale recording, FAQ moisture inspection, digital invoice generation, and capacity alerts. |
+| **District Control Tower** | `/control-tower` | District-wide centre radar, 42-minute early congestion prediction, dynamic appointment rebalancing, and throughput analytics. |
+| **State Directorate Command** | `/admin` | State telemetry grid, central grievance triage desk, AI policy sentinel, inter-district performance scorecards, and DBT SLA audit logs. |
 
-- Large visual buttons
+---
 
-- Voice-first interface
+## 🤖 Kisan Setu AI Sahayak
 
-- Voice assistant with microphone, speech-to-text and text-to-speech where browser-supported
+The platform features an intelligent, conversational reasoning assistant capable of natural multi-turn dialogue in **Hindi, English, and Hinglish**:
+- **Turn & Queue Inquiries**: *"मेरी बारी कब आएगी?"*, *"मेरे आगे कितने किसान हैं?"*
+- **Centre & Congestion**: *"सबसे कम भीड़ वाला केंद्र कौन सा है?"*, *"वहाँ जाने में कितना समय लगेगा?"*
+- **Slot Rescheduling**: Interactive proposed slots with one-tap `[Confirm]` / `[Cancel]` confirmation.
+- **Weighbridge & Quality**: Real-time electronic gross/tare weights and moisture percentage reports.
+- **PFMS DBT Payments**: Computed gross payouts and 48-hour credit countdown.
+- **Voice App Navigation**: Direct voice navigation to Queue, Payments, Timeline, Grievance, or Profile views.
 
-- Farmer dashboard
+---
 
-- Registration
+## 🛠️ Technology Stack
 
-- Crop + quantity
+- **Frontend & Routing**: React 19, TypeScript, TanStack Start (SSR), TanStack Router, TanStack Query.
+- **Styling**: Tailwind CSS v4 + OKLCH Design Tokens (Navy, Leaf Green, Wheat Saffron, Signal Cyan).
+- **Backend & Database**: Supabase PostgreSQL with Row Level Security (RLS), Realtime WebSocket publications, and transactional stored procedures.
+- **Speech Synthesis & Recognition**: Web Speech API with regional Indian English & Hindi voice prioritization.
 
-- Smart Centre Finder
+---
 
-- Smart Slot
+## 🚀 Getting Started
 
-- Virtual Queue
+### Prerequisites
+- Node.js (v18+)
+- npm or bun
 
-- Procurement Timeline
+### Local Development
 
-- Payment Status
+```bash
+# Clone the repository
+git clone https://github.com/VanshMalhotra1301/SIH-KISAN-SETU.git
+cd kisan-setu-flow
 
-Core farmer demo:
+# Install dependencies
+npm install
 
-Wheat, 120 quintals.
-
-Centre A: 7km, queue 42, predicted wait 126min, 91% capacity.
-
-Centre B: 12km, queue 13, predicted wait 41min, 54% capacity → AI RECOMMENDED.
-
-Centre C: 18km, queue 8, predicted wait 48min.
-
-Show WHY Centre B is recommended.
-
-Give smart slot 11:30–12:00.
-
-Token KS-3842.
-
-Show farmers ahead + live ETA.
-
-Voice assistant should understand/demo questions such as:
-
-“मेरी बारी कब आएगी?”
-
-“कौन सा सेंटर मेरे लिए अच्छा है?”
-
-“आज मुझे कब जाना चाहिए?”
-
-“मेरी payment कब आएगी?”
-
-Use beautiful animated microphone/listening/response states and predefined demo responses, while keeping the voice layer API-ready.
-
-2. PROCUREMENT CENTRE
-
-Premium operational dashboard:
-
-- Farmers today
-
-- Live queue
-
-- Average wait
-
-- Utilization
-
-- Processing rate
-
-- Active counters
-
-- Queue table
-
-- Capacity visualization
-
-- Alerts
-
-- AI operational intelligence
-
-Show:
-
-“Centre A predicted to exceed safe capacity in 42 minutes.”
-
-AI recommendation:
-
-“Shift 18 future appointments → Centre B.”
-
-Buttons:
-
-Approve / Review / Override.
-
-3. DISTRICT CONTROL TOWER
-
-Make this the most impressive screen.
-
-- Premium dark command-centre UI
-
-- Interactive procurement-centre map
-
-- Green/Yellow/Red centre health
-
-- Total centres
-
-- Farmers today
-
-- Quantity procured
-
-- Average wait
-
-- Predicted overloads
-
-- Centre utilization
-
-- Queue forecast
-
-- Waiting-time analytics
-
-- Throughput
-
-- AI recommendations
-
-- Real-time activity feed
-
-Make all 3 experiences use the SAME frontend demo state so the judges can see the system is connected.
-
-Demo event:
-
-Centre A becomes overloaded → AI predicts congestion → recommends shifting 18 future appointments → admin approves → centre capacities/queues update visually.
-
-Add a beautiful “Before vs Kisan Setu” section:
-
-Traditional: Fixed Slot → Uncertain Queue → Waiting → Reactive Administration.
-
-Kisan Setu: Predict → Optimize → Smart Arrival → Virtual Queue → Proactive Intervention.
-
-Clearly label simulation numbers as “Prototype Simulation”.
-
-Architecture:
-
-Create reusable components, TypeScript interfaces and simple service abstractions for farmer, centres, slots, queue, procurement, payment, forecasts, recommendations and analytics. Use demo data now; make it easy to replace with real APIs later.
-
-MOST IMPORTANT:
-
-Prioritize exceptional visual design, responsive UX, farmer voice accessibility, the Smart Centre/Smart Slot/Virtual Queue experience and the District Control Tower. Make the entire prototype feel like a real national-scale GovTech product.
-
-Final branding:
-
-KISAN SETU
-
-“From registration to procurement to payment — without the uncertainty.”
-
-Core message:
-
-“Don’t just digitize the queue. Predict it, optimize it and orchestrate it.”
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/0f00cbe7-3091-4848-b144-05a5d40fa150).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+# Run the development server
 npm run dev
 ```
+
+### Production Build
+
+```bash
+npm run build
+npm run preview
+```
+
+---
+
+## 📄 License & Attribution
+
+Developed for **Smart India Hackathon 2026**.  
+Ministry of Consumer Affairs, Food & Public Distribution, Government of India.
