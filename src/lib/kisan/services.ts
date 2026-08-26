@@ -102,6 +102,13 @@ export const farmerService = {
       })
       .eq("id", userId);
     if (error) throw new Error(`Failed to update registration: ${error.message}`);
+
+    await auditService.log({
+      action: "farmer_update_registration",
+      targetType: "farmers",
+      targetId: userId,
+      metadata: payload,
+    });
   },
 
   /** Book and create full end-to-end procurement journey in Supabase */
@@ -220,6 +227,13 @@ export const farmerService = {
       message: `Farmer ${params.farmerName} confirmed slot (${token} · ${params.quantityQuintals} qtl ${params.crop})`,
     });
 
+    await auditService.log({
+      action: "farmer_book_slot",
+      targetType: "queue_tickets",
+      targetId: ticketId,
+      metadata: { token, centreId: params.centreId, slotWindow },
+    });
+
     return { token, ticketId };
   },
 };
@@ -291,6 +305,13 @@ export const centreService = {
 
     const { error } = await supabase.from("procurement_centres").update(dbUpdates).eq("id", id);
     if (error) throw new Error(`Failed to update centre: ${error.message}`);
+
+    await auditService.log({
+      action: "centre_update_metrics",
+      targetType: "procurement_centres",
+      targetId: id,
+      metadata: updates,
+    });
   },
 };
 
@@ -366,6 +387,13 @@ export const slotService = {
       booked_by: farmerId || null,
     }).eq("id", slotId);
     if (error) throw new Error(`Failed to confirm slot: ${error.message}`);
+
+    await auditService.log({
+      action: "slot_confirm",
+      targetType: "slots",
+      targetId: slotId,
+      metadata: { farmerId },
+    });
   },
 };
 
@@ -782,6 +810,8 @@ export const recommendationService = {
     await supabase.from("queue_tickets")
       .update({ farmers_ahead: 3, eta_minutes: 14 })
       .not("stage", "eq", "done");
+
+    await auditService.log({ action: "recommendation_approve", targetType: "ai_recommendations", targetId: id, metadata: { from: rec.from_centre_id, to: rec.to_centre_id } });
   },
 
   /** Admin overrides a recommendation */
@@ -790,6 +820,7 @@ export const recommendationService = {
       .update({ status: "overridden", updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) throw new Error(`Failed to override: ${error.message}`);
+    await auditService.log({ action: "recommendation_override", targetType: "ai_recommendations", targetId: id });
   },
 
   /** Admin starts reviewing */
@@ -798,6 +829,7 @@ export const recommendationService = {
       .update({ status: "reviewing", updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) throw new Error(`Failed to update review status: ${error.message}`);
+    await auditService.log({ action: "recommendation_review", targetType: "ai_recommendations", targetId: id });
   },
 };
 
@@ -985,6 +1017,7 @@ export const adminService = {
       .update({ role, updated_at: new Date().toISOString() })
       .eq("id", userId);
     if (error) throw new Error(`Failed to update user role: ${error.message}`);
+    await auditService.log({ action: "admin_update_role", targetType: "profiles", targetId: userId, metadata: { role } });
   },
 
   /** Update a user's profile */
@@ -997,6 +1030,7 @@ export const adminService = {
     if (updates["centreId"] !== undefined) dbUpdates["centre_id"] = updates["centreId"];
     const { error } = await supabase.from("profiles").update(dbUpdates).eq("id", userId);
     if (error) throw new Error(`Failed to update user: ${error.message}`);
+    await auditService.log({ action: "admin_update_user", targetType: "profiles", targetId: userId, metadata: updates });
   },
 
   /** Create a new procurement centre */
@@ -1026,6 +1060,7 @@ export const adminService = {
       .select("id")
       .single();
     if (error) throw new Error(`Failed to create centre: ${error.message}`);
+    await auditService.log({ action: "admin_create_centre", targetType: "procurement_centres", targetId: data.id, metadata: centre });
     return data.id;
   },
 
@@ -1036,6 +1071,7 @@ export const adminService = {
       .update({ centre_id: centreId, updated_at: new Date().toISOString() })
       .eq("id", userId);
     if (error) throw new Error(`Failed to assign operator: ${error.message}`);
+    await auditService.log({ action: "admin_assign_operator", targetType: "profiles", targetId: userId, metadata: { centreId } });
   },
 
   /** List audit logs with optional filters */
@@ -1151,6 +1187,7 @@ export const grievanceService = {
     if (status === "resolved") updates["resolved_at"] = new Date().toISOString();
     const { error } = await supabase.from("grievances").update(updates).eq("id", id);
     if (error) throw new Error(`Failed to update grievance: ${error.message}`);
+    await auditService.log({ action: "grievance_update_status", targetType: "grievances", targetId: id, metadata: { status, notes } });
   },
 
   assign: async (id: string, assignedToName: string): Promise<void> => {
@@ -1160,6 +1197,7 @@ export const grievanceService = {
       updated_at: new Date().toISOString(),
     }).eq("id", id);
     if (error) throw new Error(`Failed to assign grievance: ${error.message}`);
+    await auditService.log({ action: "grievance_assign", targetType: "grievances", targetId: id, metadata: { assignedToName } });
   },
 
   escalate: async (id: string, assignedToName = "State Vigilance & Quality Directorate"): Promise<void> => {
@@ -1170,6 +1208,7 @@ export const grievanceService = {
       updated_at: new Date().toISOString(),
     }).eq("id", id);
     if (error) throw new Error(`Failed to escalate grievance: ${error.message}`);
+    await auditService.log({ action: "grievance_escalate", targetType: "grievances", targetId: id, metadata: { assignedToName } });
   },
 
   resolve: async (id: string, resolutionNotes: string): Promise<void> => {
@@ -1180,6 +1219,7 @@ export const grievanceService = {
       updated_at: new Date().toISOString(),
     }).eq("id", id);
     if (error) throw new Error(`Failed to resolve grievance: ${error.message}`);
+    await auditService.log({ action: "grievance_resolve", targetType: "grievances", targetId: id, metadata: { resolutionNotes } });
   },
 
   create: async (params: Omit<Grievance, "id" | "createdAt" | "updatedAt">): Promise<Grievance> => {
@@ -1199,6 +1239,7 @@ export const grievanceService = {
       assigned_to_name: params["assignedToName"],
     }).select().single();
     if (error) throw new Error(`Failed to create grievance: ${error.message}`);
+    await auditService.log({ action: "grievance_create", targetType: "grievances", targetId: data.id, metadata: params });
     return {
       id: data.id,
       ticketId: data.ticket_id,

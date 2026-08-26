@@ -15,8 +15,14 @@ async function testWorkflow() {
   console.log("=== Testing Full Centre Operator Operational Lifecycle ===");
 
   // 1. Find or create a test ticket in Centre A
-  const centreRes = await client.query(`SELECT id, code, name FROM public.procurement_centres WHERE code = 'A' LIMIT 1;`);
+  const centreRes = await client.query(`SELECT id, code, name FROM public.procurement_centres LIMIT 1;`);
   const centreA = centreRes.rows[0];
+
+  // Cleanup any leftover from previous failed test runs
+  await client.query(`DELETE FROM public.payments WHERE ticket_id IN (SELECT id FROM public.queue_tickets WHERE token = 'TEST-9999');`);
+  await client.query(`DELETE FROM public.procurement_timeline WHERE ticket_id IN (SELECT id FROM public.queue_tickets WHERE token = 'TEST-9999');`);
+  await client.query(`DELETE FROM public.audit_logs WHERE target_id IN (SELECT id::text FROM public.queue_tickets WHERE token = 'TEST-9999');`);
+  await client.query(`DELETE FROM public.queue_tickets WHERE token = 'TEST-9999';`);
 
   const ticketRes = await client.query(`
     INSERT INTO public.queue_tickets (
