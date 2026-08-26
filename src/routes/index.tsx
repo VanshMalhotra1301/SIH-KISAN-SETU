@@ -5,7 +5,8 @@
  */
 
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { processSahayakQuery } from "@/lib/kisan/voice";
 
 import heroImage from "@/assets/mandi-dawn.jpg";
 import { PageShell } from "@/components/kisan/app-shell";
@@ -36,7 +37,7 @@ export const Route = createFileRoute("/")({
 });
 
 export function LandingPage() {
-  const { language, summary, centres } = useKisan();
+  const { language, summary, centres, farmer, ticket, slot, payment, timeline } = useKisan();
   const { user, logout } = useAuth();
   const hi = language === "hi";
 
@@ -608,7 +609,12 @@ export function LandingPage() {
               Farmer: “{voiceDemos[activeVoicePrompt]?.q}” ({voiceDemos[activeVoicePrompt]?.qEn})
             </p>
             <p className="text-xs text-foreground font-semibold leading-relaxed pt-1">
-              🤖 Sahayak: {voiceDemos[activeVoicePrompt]?.a}
+              🤖 Sahayak:{" "}
+              {processSahayakQuery(
+                hi ? voiceDemos[activeVoicePrompt]?.q : (voiceDemos[activeVoicePrompt]?.qEn || voiceDemos[activeVoicePrompt]?.q),
+                { farmer, ticket, slot, payment, centres, timeline },
+                language
+              ).text}
             </p>
           </div>
         </div>

@@ -286,14 +286,39 @@
   }
 }
 
+@keyframes ks-marquee-reverse {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0%);
+  }
+}
+
 @utility animate-marquee {
   display: flex;
   width: max-content;
-  animation: ks-marquee 30s linear infinite;
+  animation: ks-marquee 38s linear infinite;
 
   &:hover {
     animation-play-state: paused;
   }
 }
+
+@utility animate-marquee-reverse {
+  display: flex;
+  width: max-content;
+  animation: ks-marquee-reverse 42s linear infinite;
+
+  &:hover {
+    animation-play-state: paused;
+  }
+}
+
+@utility marquee-mask {
+  mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%);
+}
+
 
 

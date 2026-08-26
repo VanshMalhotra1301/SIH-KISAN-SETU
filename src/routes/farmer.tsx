@@ -228,6 +228,8 @@ export function FarmerPortal() {
     } else if (action.type === "open_modal" && action.payload?.target === "file_grievance") {
       setActiveTab("grievances");
       setShowGrievanceModal(true);
+    } else if (action.type === "navigate" && action.payload?.target) {
+      setActiveTab(action.payload.target as FarmerTab);
     }
   };
 
@@ -598,7 +600,7 @@ export function FarmerPortal() {
           )}
 
           {/* AI Sahayak Voice Companion Card */}
-          <VoiceAssistant onNavigateTab={(tab) => setActiveTab(tab as FarmerTab)} onExecuteAction={handleSahayakAction} />
+          <VoiceAssistant currentTab={activeTab} onNavigateTab={(tab) => setActiveTab(tab as FarmerTab)} onExecuteAction={handleSahayakAction} />
 
           {/* Recommended Centre Snapshot */}
           {recommendedCentre && (
