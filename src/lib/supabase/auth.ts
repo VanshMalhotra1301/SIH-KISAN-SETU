@@ -22,6 +22,12 @@ export interface AppUser {
   crop?: string | undefined;
   quantityQuintals?: number | undefined;
   department?: string | undefined;
+  bankName?: string | undefined;
+  bankAccountMasked?: string | undefined;
+  bankAccountNumber?: string | undefined;
+  ifscCode?: string | undefined;
+  landAreaAcres?: number | undefined;
+  aadhaarNumberMasked?: string | undefined;
 }
 
 export interface SignUpFarmerPayload {
@@ -37,6 +43,11 @@ export interface SignUpFarmerPayload {
   crop: string;
   cropHi?: string | undefined;
   quantityQuintals: number;
+  bankName?: string | undefined;
+  bankAccount?: string | undefined;
+  ifscCode?: string | undefined;
+  landAreaAcres?: number | undefined;
+  aadhaarNumber?: string | undefined;
 }
 
 export interface SignUpOperatorPayload {
@@ -124,6 +135,12 @@ export async function fetchProfileById(userId: string): Promise<AppUser | null> 
       centreId: data.centre_id,
       crop: farmerInfo?.crop,
       quantityQuintals: farmerInfo ? Number(farmerInfo.quantity_quintals) : undefined,
+      bankName: farmerInfo?.bank_name || "State Bank of India",
+      bankAccountMasked: farmerInfo?.bank_account_masked || "••••4417",
+      bankAccountNumber: farmerInfo?.bank_account_number,
+      ifscCode: farmerInfo?.ifsc_code || "SBIN0001234",
+      landAreaAcres: farmerInfo?.land_area_acres ? Number(farmerInfo.land_area_acres) : 5.0,
+      aadhaarNumberMasked: farmerInfo?.aadhaar_number_masked || "•••• •••• 8821",
     };
   } catch (err) {
     console.warn("Error fetching user profile:", err);

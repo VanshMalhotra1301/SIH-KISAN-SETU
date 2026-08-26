@@ -162,11 +162,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let quantity = 120;
       let centreId: string | null = null;
       let department = "Department of Agriculture";
+      let bankName = "State Bank of India";
+      let bankAccount: string | null = null;
+      let ifscCode = "SBIN0001234";
+      let landArea = 5.0;
+      let aadhaarNumber: string | null = null;
 
       if (payload.role === "farmer") {
         village = payload.village || "";
         crop = payload.crop || "Wheat";
         quantity = payload.quantityQuintals || 120;
+        bankName = payload.bankName || "State Bank of India";
+        bankAccount = payload.bankAccount || null;
+        ifscCode = payload.ifscCode || "SBIN0001234";
+        landArea = payload.landAreaAcres || 5.0;
+        aadhaarNumber = payload.aadhaarNumber || null;
       } else if (payload.role === "centre_operator") {
         centreId = payload.centreId;
       } else if (payload.role === "district_admin") {
@@ -188,6 +198,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         p_quantity: quantity,
         p_centre_id: centreId,
         p_department: department,
+        p_bank_name: bankName,
+        p_bank_account: bankAccount,
+        p_ifsc_code: ifscCode,
+        p_land_area: landArea,
+        p_aadhaar_number: aadhaarNumber,
       });
 
       if (rpcError) {

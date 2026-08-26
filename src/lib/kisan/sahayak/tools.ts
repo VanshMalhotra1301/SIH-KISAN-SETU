@@ -65,8 +65,8 @@ export const SahayakTools = {
         toolName: "getFarmerProfile",
         success: true,
         data: profile,
-        summaryEn: profile ? `Farmer ${profile.name} (${profile.farmerId || "Registered"}), Crop: ${profile.crop}, ${profile.quantityQuintals} Quintals.` : "No registered profile found.",
-        summaryHi: profile ? `किसान ${profile.nameHi || profile.name} (${profile.farmerId || "पंजीकृत"}), फसल: ${profile.cropHi || profile.crop}, ${profile.quantityQuintals} क्विंटल।` : "कोई किसान प्रोफ़ाइल नहीं मिली।",
+        summaryEn: profile ? `Farmer ${profile.name} (${profile.farmerId || "Registered"}), Bank: ${profile.bankName || "SBI"} (${profile.bankAccountMasked || "••••4417"}), IFSC: ${profile.ifscCode || "SBIN0001234"}, Land: ${profile.landAreaAcres || 5} Acres, Crop: ${profile.crop}, ${profile.quantityQuintals} Quintals.` : "No registered profile found.",
+        summaryHi: profile ? `किसान ${profile.nameHi || profile.name} (${profile.farmerId || "पंजीकृत"}), बैंक: ${profile.bankName || "SBI"} (${profile.bankAccountMasked || "••••4417"}), IFSC: ${profile.ifscCode || "SBIN0001234"}, भूमि: ${profile.landAreaAcres || 5} एकड़, फसल: ${profile.cropHi || profile.crop}, ${profile.quantityQuintals} क्विंटल।` : "कोई किसान प्रोफ़ाइल नहीं मिली।",
       };
     } catch (err: any) {
       return {

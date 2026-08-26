@@ -61,6 +61,13 @@ export function LoginPage() {
   const [selectedCentreId, setSelectedCentreId] = useState("");
   const [department, setDepartment] = useState("");
 
+  // Farmer Bank & Land state
+  const [bankName, setBankName] = useState("State Bank of India");
+  const [bankAccount, setBankAccount] = useState("");
+  const [ifscCode, setIfscCode] = useState("SBIN0001234");
+  const [landArea, setLandArea] = useState("5.0");
+  const [aadhaarNumber, setAadhaarNumber] = useState("");
+
   // Forgot Password state
   const [forgotEmail, setForgotEmail] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -128,6 +135,11 @@ export function LoginPage() {
           crop,
           cropHi: crop === "Wheat" ? "गेहूँ" : crop === "Paddy" ? "धान" : crop === "Mustard" ? "सरसों" : "चना",
           quantityQuintals: Number(quantity) || 120,
+          bankName: bankName.trim(),
+          bankAccount: bankAccount.trim() || undefined,
+          ifscCode: ifscCode.trim().toUpperCase() || undefined,
+          landAreaAcres: Number(landArea) || 5.0,
+          aadhaarNumber: aadhaarNumber.trim() || undefined,
         } as SignUpFarmerPayload;
       } else if (signupRole === "centre_operator") {
         payload = {
@@ -558,7 +570,105 @@ export function LoginPage() {
                           onChange={(e) => setQuantity(e.target.value)}
                           placeholder="120"
                           className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
+                        >
+                        </input>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          {hi ? "कुल कृषि भूमि (एकड़)" : "Total Cultivated Land (Acres)"}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          required
+                          value={landArea}
+                          onChange={(e) => setLandArea(e.target.value)}
+                          placeholder="e.g. 5.5"
+                          className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
                         />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          {hi ? "आधार / पीएम-किसान आईडी (वैकल्पिक)" : "Aadhaar / PM-KISAN ID (Optional)"}
+                        </label>
+                        <input
+                          type="text"
+                          value={aadhaarNumber}
+                          onChange={(e) => setAadhaarNumber(e.target.value)}
+                          placeholder="e.g. 12-digit Aadhaar"
+                          className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bank Details Section */}
+                    <div className="rounded-2xl border border-leaf/40 bg-leaf-soft/40 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">🏦</span>
+                        <div>
+                          <p className="font-display text-xs font-extrabold text-navy">
+                            {hi ? "बैंक खाता विवरण (100% प्रत्यक्ष DBT भुगतान हेतु)" : "Bank Account Details (For 100% PFMS DBT MSP Payout)"}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {hi ? "एमएसपी राशि सीधे इसी खाते में तुलाई के 48 घंटे के भीतर जमा होगी" : "Direct benefit transfer will credit directly to this account within 48h"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          {hi ? "बैंक का नाम" : "Bank Name"}
+                        </label>
+                        <select
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
+                        >
+                          <option value="State Bank of India">State Bank of India (SBI)</option>
+                          <option value="Punjab National Bank">Punjab National Bank (PNB)</option>
+                          <option value="Bank of Baroda">Bank of Baroda (BOB)</option>
+                          <option value="HDFC Bank">HDFC Bank</option>
+                          <option value="ICICI Bank">ICICI Bank</option>
+                          <option value="Canara Bank">Canara Bank</option>
+                          <option value="Union Bank of India">Union Bank of India</option>
+                          <option value="Sarva Haryana Gramin Bank">Sarva Haryana Gramin Bank</option>
+                          <option value="Central Bank of India">Central Bank of India</option>
+                          <option value="Other Bank">Other Commercial / Rural Bank</option>
+                        </select>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            {hi ? "बैंक खाता संख्या" : "Bank Account Number"}
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={bankAccount}
+                            onChange={(e) => setBankAccount(e.target.value)}
+                            placeholder="e.g. 10023456789"
+                            className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            {hi ? "आईएफएससी कोड" : "Bank IFSC Code"}
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={ifscCode}
+                            onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
+                            placeholder="e.g. SBIN0001234"
+                            className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy uppercase focus-ring"
+                          />
+                        </div>
                       </div>
                     </div>
                   </>

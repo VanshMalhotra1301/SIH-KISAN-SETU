@@ -23,6 +23,12 @@ export interface Farmer {
   crop: string;
   cropHi: string;
   quantityQuintals: number;
+  landAreaAcres?: number;
+  bankName?: string;
+  bankAccountMasked?: string;
+  bankAccountNumber?: string;
+  ifscCode?: string;
+  aadhaarNumberMasked?: string;
 }
 
 export interface ProcurementCentre {

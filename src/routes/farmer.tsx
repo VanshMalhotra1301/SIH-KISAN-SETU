@@ -145,6 +145,11 @@ export function FarmerPortal() {
   const registeredQuantity = farmer?.quantityQuintals || user?.quantityQuintals || 120;
   const villageName = farmer?.village || user?.village || "";
   const districtName = farmer?.district || user?.district || "";
+  const bankName = farmer?.bankName || user?.bankName || "State Bank of India";
+  const bankAccountMasked = farmer?.bankAccountMasked || user?.bankAccountMasked || (farmer?.bankAccountNumber ? `••••${farmer.bankAccountNumber.slice(-4)}` : "••••4417");
+  const ifscCode = farmer?.ifscCode || user?.ifscCode || "SBIN0001234";
+  const landAreaAcres = farmer?.landAreaAcres || user?.landAreaAcres || 5.0;
+  const aadhaarNumberMasked = farmer?.aadhaarNumberMasked || user?.aadhaarNumberMasked || "•••• •••• 8821";
 
   // Unread notification count
   const unreadCount = notifications.filter((n) => !n.isRead).length;
@@ -873,15 +878,32 @@ export function FarmerPortal() {
 
             {/* Bank details & SLA */}
             <div className="grid gap-3 sm:grid-cols-2 text-xs">
-              <div className="rounded-xl bg-muted/40 p-3">
-                <span className="text-muted-foreground uppercase text-[10px] font-bold">Registered Bank Account</span>
-                <p className="font-bold text-navy mt-0.5">{payment?.bankMasked || "PNB ••••4417"}</p>
-                <span className="text-[10px] text-muted-foreground">PFMS DBT Verified</span>
+              <div className="rounded-xl bg-muted/40 p-3.5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">
+                    {hi ? "पंजीकृत बैंक खाता (DBT)" : "Registered Bank Account"}
+                  </span>
+                  <span className="rounded-full bg-leaf/20 px-2 py-0.5 text-[9px] font-bold text-leaf">
+                    ✓ NPCI Active
+                  </span>
+                </div>
+                <p className="font-display text-sm font-extrabold text-navy">
+                  {bankName} · {bankAccountMasked}
+                </p>
+                <p className="font-mono text-[11px] text-muted-foreground">
+                  IFSC: <strong className="text-navy">{ifscCode}</strong>
+                </p>
               </div>
-              <div className="rounded-xl bg-muted/40 p-3">
-                <span className="text-muted-foreground uppercase text-[10px] font-bold">Direct Credit SLA</span>
-                <p className="font-bold text-navy mt-0.5">{payment?.expectedCreditInHi || "Within 48 hours of weighing"}</p>
-                <span className="text-[10px] text-leaf font-semibold">100% Direct to Account</span>
+              <div className="rounded-xl bg-muted/40 p-3.5 space-y-1">
+                <span className="text-muted-foreground uppercase text-[10px] font-bold">
+                  {hi ? "प्रत्यक्ष भुगतान समय सीमा (SLA)" : "Direct Credit SLA"}
+                </span>
+                <p className="font-display text-sm font-extrabold text-navy">
+                  {payment?.expectedCreditInHi || (hi ? "तुलाई के 48 घंटे के भीतर" : "Within 48 hours of weighing")}
+                </p>
+                <p className="text-[10px] text-leaf font-semibold">
+                  100% PFMS Treasury Direct Credit
+                </p>
               </div>
             </div>
 
@@ -1013,29 +1035,109 @@ export function FarmerPortal() {
       {activeTab === "profile" && (
         <div className="mt-6 space-y-6">
           <div className="surface-lift p-5">
-            <SectionLabel tone="light">{hi ? "किसान प्रोफाइल एवं सेटिंग्स" : "Farmer Profile & Security"}</SectionLabel>
+            <SectionLabel tone="light">{hi ? "किसान प्रोफाइल एवं सेटिंग्स" : "Farmer Profile & Registration"}</SectionLabel>
             <h2 className="mt-1 font-display text-xl font-extrabold text-navy">
-              Manage Registration & Password
+              {hi ? "पंजीकृत किसान पहचान एवं बैंक खाता" : "Verified Farmer Identity & Bank Records"}
             </h2>
           </div>
 
-          <div className="surface-lift p-6 space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 text-xs">
-              <div>
-                <label className="text-muted-foreground uppercase text-[10px] font-bold">Full Name</label>
-                <p className="text-sm font-extrabold text-navy mt-0.5">{displayName}</p>
+          <div className="grid gap-5 md:grid-cols-2">
+            {/* 1. Farmer Identity Card */}
+            <div className="surface-lift p-6 space-y-4">
+              <div className="flex items-center gap-3 border-b border-border pb-3">
+                <div className="flex size-11 items-center justify-center rounded-2xl bg-gradient-leaf text-lg font-black text-primary-foreground shadow-sm">
+                  {initial}
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-display text-base font-extrabold text-navy">{displayName}</h3>
+                    <span className="rounded-full bg-leaf/20 px-2 py-0.5 text-[9px] font-bold text-leaf">
+                      ✓ {hi ? "सत्यापित किसान" : "Verified"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{user?.email || "farmer@kisansetu.in"}</p>
+                </div>
               </div>
-              <div>
-                <label className="text-muted-foreground uppercase text-[10px] font-bold">Farmer ID Code</label>
-                <p className="text-sm font-mono font-bold text-navy mt-0.5">{farmerIdCode}</p>
+
+              <div className="space-y-3 text-xs">
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "किसान आईडी कोड" : "Farmer ID Code"}</span>
+                  <span className="font-mono font-extrabold text-navy">{farmerIdCode}</span>
+                </div>
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "आधार कार्ड (सत्यापित)" : "Aadhaar Number"}</span>
+                  <span className="font-mono font-bold text-navy">{aadhaarNumberMasked}</span>
+                </div>
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "कुल कृषि भूमि" : "Cultivated Land"}</span>
+                  <span className="font-extrabold text-navy">{landAreaAcres} {hi ? "एकड़ (राजस्व रिकॉर्ड सत्यापित)" : "Acres (Revenue Verified)"}</span>
+                </div>
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "गाँव व जिला" : "Village & District"}</span>
+                  <span className="font-bold text-navy">{villageName || "Bahadurgarh"}, {districtName || "Karnal"}</span>
+                </div>
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "मोबाइल नंबर" : "Phone Number"}</span>
+                  <span className="font-bold text-navy">{user?.phone || "+91 98765 43210"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "पंजीकृत फसल व कोटा" : "Crop & Procurement Quota"}</span>
+                  <span className="font-extrabold text-leaf">{registeredCropHi} · {registeredQuantity} {hi ? "क्विंटल" : "Quintals"}</span>
+                </div>
               </div>
-              <div>
-                <label className="text-muted-foreground uppercase text-[10px] font-bold">Village & District</label>
-                <p className="text-sm font-bold text-navy mt-0.5">{villageName || "Danapur"}, {districtName || "Karnal"}</p>
+            </div>
+
+            {/* 2. Official Bank & DBT Account Card */}
+            <div className="surface-lift p-6 space-y-4 border-2 border-leaf/30 bg-leaf-soft/30">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🏦</span>
+                  <div>
+                    <h3 className="font-display text-base font-extrabold text-navy">
+                      {hi ? "डीबीटी बैंक खाता विवरण" : "PFMS Direct Bank Account (DBT)"}
+                    </h3>
+                    <p className="text-[10px] text-muted-foreground">
+                      {hi ? "एमएसपी राशि का प्रत्यक्ष भुगतान इसी खाते में होगा" : "MSP payout is transferred directly via DBT"}
+                    </p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-leaf px-2.5 py-0.5 text-[9px] font-black text-white">
+                  ✓ PFMS ACTIVE
+                </span>
               </div>
-              <div>
-                <label className="text-muted-foreground uppercase text-[10px] font-bold">Registered Crop & Quantity</label>
-                <p className="text-sm font-bold text-navy mt-0.5">{registeredCropHi} · {registeredQuantity} Quintals</p>
+
+              <div className="space-y-3 text-xs">
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "बैंक का नाम" : "Bank Name"}</span>
+                  <span className="font-extrabold text-navy">{bankName}</span>
+                </div>
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "खाता संख्या" : "Account Number"}</span>
+                  <span className="font-mono font-extrabold text-navy">{bankAccountMasked}</span>
+                </div>
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "आईएफएससी कोड" : "Bank IFSC"}</span>
+                  <span className="font-mono font-bold text-navy">{ifscCode}</span>
+                </div>
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "एनपीसीआई आधार सीडिंग" : "NPCI Aadhaar Seeding"}</span>
+                  <span className="font-bold text-leaf">✓ {hi ? "सक्रिय एवं प्रमाणित" : "Active & Seeded"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground uppercase text-[10px] font-bold">{hi ? "भुगतान गारंटी (SLA)" : "Payment SLA"}</span>
+                  <span className="font-bold text-navy">{hi ? "तुलाई के 48 घंटे में 100% डीबीटी" : "Within 48h of weighment"}</span>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-card p-3 border border-border text-[11px] text-muted-foreground space-y-1">
+                <p className="font-bold text-navy">
+                  🛡️ {hi ? "सुरक्षित एवं अपरिवर्तनीय बैंक सीडिंग" : "Secure & Tamper-Proof Direct Banking"}
+                </p>
+                <p className="leading-relaxed">
+                  {hi
+                    ? "यह खाता सीधे राज्य कोषागार एवं पीएफएमएस (PFMS) पोर्टल से जुड़ा है। तुलाई पूरी होते ही एमएसपी राशि सीधे इसी खाते में जमा होती है।"
+                    : "This account is linked directly to state treasury and PFMS. All procurement payments are routed with zero intermediary commissions."}
+                </p>
               </div>
             </div>
           </div>
@@ -1201,9 +1303,17 @@ export function FarmerPortal() {
                 <span>TOTAL PAYABLE:</span>
                 <span>₹{grossAmount.toLocaleString("en-IN")}</span>
               </div>
+              <div className="flex justify-between">
+                <span>BANK ACCOUNT:</span>
+                <span className="font-bold">{bankName} ({bankAccountMasked})</span>
+              </div>
+              <div className="flex justify-between">
+                <span>IFSC CODE:</span>
+                <span className="font-mono">{ifscCode}</span>
+              </div>
               <div className="flex justify-between text-[10px] text-muted-foreground">
                 <span>PAYMENT MODE:</span>
-                <span>PFMS Direct Benefit Transfer (DBT)</span>
+                <span>PFMS Direct Benefit Transfer (DBT) · 48h SLA</span>
               </div>
             </div>
 

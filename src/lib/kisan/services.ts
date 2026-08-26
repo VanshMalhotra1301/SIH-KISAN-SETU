@@ -74,6 +74,12 @@ export const farmerService = {
       crop: f?.crop || "Wheat",
       cropHi: f?.crop_hi || "गेहूँ",
       quantityQuintals: f ? Number(f.quantity_quintals) : 0,
+      landAreaAcres: f?.land_area_acres ? Number(f.land_area_acres) : 5.0,
+      bankName: f?.bank_name || "State Bank of India",
+      bankAccountMasked: f?.bank_account_masked || (f?.bank_account_number ? `••••${f.bank_account_number.slice(-4)}` : "••••4417"),
+      bankAccountNumber: f?.bank_account_number,
+      ifscCode: f?.ifsc_code || "SBIN0001234",
+      aadhaarNumberMasked: f?.aadhaar_number_masked || "•••• •••• 8821",
     };
   },
 
