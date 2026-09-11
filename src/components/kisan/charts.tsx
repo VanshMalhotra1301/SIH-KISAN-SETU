@@ -16,16 +16,32 @@ export function ForecastChart({
   tone?: "light" | "dark";
   className?: string;
 }) {
+  if (!data || data.length === 0) {
+    return (
+      <div
+        className={cn(
+          "flex h-[220px] w-full items-center justify-center rounded-xl border p-4 text-xs font-semibold",
+          tone === "dark"
+            ? "border-command-line bg-command-panel/40 text-command-muted"
+            : "border-border bg-muted/30 text-muted-foreground",
+          className,
+        )}
+      >
+        <span>No queue forecast data available for this centre.</span>
+      </div>
+    );
+  }
+
   const w = 640;
   const h = 220;
   const pad = { top: 16, right: 16, bottom: 26, left: 30 };
-  const max = Math.max(...data.map((d) => Math.max(d.queue, d.predicted, d.capacityLine))) * 1.15;
-  const px = (i: number) => pad.left + (i * (w - pad.left - pad.right)) / (data.length - 1);
+  const max = Math.max(1, ...data.map((d) => Math.max(d.queue ?? 0, d.predicted ?? 0, d.capacityLine ?? 0))) * 1.15;
+  const px = (i: number) => pad.left + (i * (w - pad.left - pad.right)) / Math.max(1, data.length - 1);
   const py = (v: number) => h - pad.bottom - (v / max) * (h - pad.top - pad.bottom);
 
-  const actual = data.map((d, i) => ({ x: px(i), y: py(d.queue) }));
-  const predicted = data.map((d, i) => ({ x: px(i), y: py(d.predicted) }));
-  const capY = py(data[0]!.capacityLine);
+  const actual = data.map((d, i) => ({ x: px(i), y: py(d.queue ?? 0) }));
+  const predicted = data.map((d, i) => ({ x: px(i), y: py(d.predicted ?? 0) }));
+  const capY = py(data[0]?.capacityLine ?? 35);
   const gridColor = tone === "dark" ? "var(--command-line)" : "var(--border)";
   const axisText = tone === "dark" ? "var(--command-muted)" : "var(--muted-foreground)";
 
@@ -74,12 +90,27 @@ export function WaitAnalyticsChart({
   data: WaitAnalyticsPoint[];
   tone?: "light" | "dark";
 }) {
+  if (!data || data.length === 0) {
+    return (
+      <div
+        className={cn(
+          "flex h-[200px] w-full items-center justify-center rounded-xl border p-4 text-xs font-semibold",
+          tone === "dark"
+            ? "border-command-line bg-command-panel/40 text-command-muted"
+            : "border-border bg-muted/30 text-muted-foreground",
+        )}
+      >
+        <span>No wait analytics recorded yet.</span>
+      </div>
+    );
+  }
+
   const w = 560;
   const h = 200;
   const pad = { top: 14, bottom: 26, left: 26, right: 10 };
-  const max = Math.max(...data.map((d) => d.beforeMin)) * 1.12;
-  const band = (w - pad.left - pad.right) / data.length;
-  const barW = band / 2 - 6;
+  const max = Math.max(1, ...data.map((d) => Math.max(d.beforeMin ?? 0, d.afterMin ?? 0))) * 1.12;
+  const band = (w - pad.left - pad.right) / Math.max(1, data.length);
+  const barW = Math.max(4, band / 2 - 6);
   const axisText = tone === "dark" ? "var(--command-muted)" : "var(--muted-foreground)";
   const scale = (v: number) => (v / max) * (h - pad.top - pad.bottom);
 
@@ -116,13 +147,21 @@ export function WaitAnalyticsChart({
 }
 
 export function ThroughputChart({ data }: { data: ThroughputPoint[] }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex h-[190px] w-full items-center justify-center rounded-xl border border-command-line bg-command-panel/40 p-4 text-xs font-semibold text-command-muted">
+        <span>No throughput points recorded yet.</span>
+      </div>
+    );
+  }
+
   const w = 560;
   const h = 190;
   const pad = { top: 16, bottom: 24, left: 20, right: 10 };
-  const max = Math.max(...data.map((d) => d.quintals)) * 1.15;
-  const px = (i: number) => pad.left + (i * (w - pad.left - pad.right)) / (data.length - 1);
+  const max = Math.max(1, ...data.map((d) => d.quintals ?? 0)) * 1.15;
+  const px = (i: number) => pad.left + (i * (w - pad.left - pad.right)) / Math.max(1, data.length - 1);
   const py = (v: number) => h - pad.bottom - (v / max) * (h - pad.top - pad.bottom);
-  const pts = data.map((d, i) => ({ x: px(i), y: py(d.quintals) }));
+  const pts = data.map((d, i) => ({ x: px(i), y: py(d.quintals ?? 0) }));
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="Throughput per hour">

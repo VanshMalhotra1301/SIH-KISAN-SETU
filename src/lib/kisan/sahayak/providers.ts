@@ -50,7 +50,7 @@ export class GeminiAIProvider implements SahayakAIProvider {
 
   constructor() {
     // Check for vite environment variable if configured
-    this.apiKey = (typeof import.meta !== "undefined" && import.meta.env?.VITE_GEMINI_API_KEY) || null;
+    this.apiKey = (typeof import.meta !== "undefined" && import.meta.env?.["VITE_GEMINI_API_KEY"]) || null;
   }
 
   isAvailable(): boolean {

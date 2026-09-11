@@ -1,6 +1,9 @@
 /**
  * KISAN SETU — Production State Management
  * All state loaded from Supabase on mount. No demo/mock data.
+ *
+ * Critical fix: Role-conditional data loading — each role only fetches what it needs.
+ * Targeted realtime refresh — update only the changed entity, not full reload.
  */
 import {
   createContext,
@@ -17,7 +20,12 @@ import {
   auditService,
   centreService,
   farmerService,
+  DEFAULT_FORECAST_POINTS,
+  DEFAULT_THROUGHPUT,
+  DEFAULT_WAIT_ANALYTICS,
   forecastService,
+  intelligenceService,
+  interventionService,
   notificationService,
   operatorService,
   type OperatorProcessParams,
@@ -32,7 +40,9 @@ import { useAuth } from "@/hooks/use-auth";
 import type {
   ActivityEvent,
   AiRecommendation,
+  AnomalyDetection,
   CentreAlert,
+  CongestionPrediction,
   DistrictSummary,
   Farmer,
   ForecastPoint,
@@ -71,8 +81,9 @@ interface KisanState {
   throughput: ThroughputPoint[];
   activity: ActivityEvent[];
   notifications: AppNotification[];
+  anomalies: AnomalyDetection[];
+  congestionPredictions: CongestionPrediction[];
   interventionApplied: boolean;
-  overloadTriggered: boolean;
   isLoading: boolean;
   error: string | null;
 }
@@ -80,11 +91,12 @@ interface KisanState {
 interface KisanActions {
   setLanguage: (lang: Language) => void;
   toggleLanguage: () => void;
-  triggerOverload: () => void;
   reviewRecommendation: () => void;
   approveRecommendation: () => void;
   overrideRecommendation: () => void;
   refreshFromDatabase: () => Promise<void>;
+  refreshCentres: () => Promise<void>;
+  refreshQueue: (centreId?: string) => Promise<void>;
   updateFarmerProfile: (updates: Partial<Farmer>) => Promise<void>;
   operatorProcessTicket: (params: OperatorProcessParams) => Promise<any>;
   operatorUpdateCounters: (centreId: string, activeCounters: number) => Promise<void>;
@@ -92,6 +104,7 @@ interface KisanActions {
   markAllNotificationsRead: () => Promise<void>;
   deleteNotification: (notifId: string) => Promise<void>;
   sendNotification: (title: string, body: string, targetUserId?: string) => Promise<void>;
+  refreshIntelligence: () => Promise<void>;
 }
 
 interface KisanContextValue extends KisanState, KisanActions {
@@ -111,96 +124,245 @@ const emptyState: KisanState = {
   queueRows: [],
   alerts: [],
   recommendation: null,
-  forecast: [],
-  waitAnalytics: [],
-  throughput: [],
+  forecast: DEFAULT_FORECAST_POINTS,
+  waitAnalytics: DEFAULT_WAIT_ANALYTICS,
+  throughput: DEFAULT_THROUGHPUT,
   activity: [],
   notifications: [],
+  anomalies: [],
+  congestionPredictions: [],
   interventionApplied: false,
-  overloadTriggered: false,
   isLoading: true,
   error: null,
 };
 
 const KisanContext = createContext<KisanContextValue | null>(null);
 
-function nowLabel() {
-  return new Date().toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
 export function KisanProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [state, setState] = useState<KisanState>(emptyState);
 
+  /**
+   * ROLE-CONDITIONAL DATA LOADING
+   * Each role only fetches the data it actually needs.
+   */
   const refreshFromDatabase = useCallback(async () => {
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
       const activeUserId = user?.id;
-      const results = await Promise.allSettled([
-        farmerService.getProfile(activeUserId),                 // 0
-        centreService.list(),                                   // 1
-        slotService.suggest(),                                  // 2
-        queueService.getTicket(activeUserId),                   // 3
-        procurementService.getTimeline(undefined, activeUserId), // 4
-        paymentService.getStatus(activeUserId),                 // 5
-        queueService.getCentreQueue(),                           // 6
-        analyticsService.alerts(),                              // 7
-        recommendationService.current(),                         // 8
-        analyticsService.activityFeed(),                         // 9
-        forecastService.queueForecast(),                         // 10
-        forecastService.waitAnalytics(),                         // 11
-        forecastService.throughput(),                             // 12
-        activeUserId ? notificationService.getForUser(activeUserId) : Promise.resolve([]), // 13
-      ]);
+      const role = user?.role;
+      const centreId = user?.centreId;
+      const district = user?.district;
 
-      const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
-        r.status === "fulfilled" ? r.value : fallback;
+      // ── Common: notifications for all authenticated users ──
+      const notificationsP = activeUserId
+        ? notificationService.getForUser(activeUserId)
+        : Promise.resolve([]);
 
-      const rec = val(results[8], null as AiRecommendation | null);
+      if (role === "farmer") {
+        // FARMER: profile, centres (for booking), slot, ticket, timeline, payment, notifications
+        const results = await Promise.allSettled([
+          farmerService.getProfile(activeUserId),           // 0
+          centreService.list(),                              // 1
+          slotService.suggest(undefined, activeUserId),      // 2
+          queueService.getTicket(activeUserId),              // 3
+          procurementService.getTimeline(undefined, activeUserId), // 4
+          paymentService.getStatus(activeUserId),            // 5
+          notificationsP,                                    // 6
+        ]);
 
-      setState((s) => ({
-        ...s,
-        farmer: val(results[0], s.farmer),
-        centres: val(results[1], s.centres),
-        slot: val(results[2], s.slot),
-        ticket: val(results[3], s.ticket),
-        timeline: val(results[4], s.timeline),
-        payment: val(results[5], s.payment),
-        queueRows: val(results[6], s.queueRows),
-        alerts: val(results[7], s.alerts),
-        recommendation: rec,
-        activity: val(results[9], s.activity),
-        forecast: val(results[10], s.forecast),
-        waitAnalytics: val(results[11], s.waitAnalytics),
-        throughput: val(results[12], s.throughput),
-        notifications: val(results[13], s.notifications),
-        interventionApplied: rec?.status === "approved",
-        isLoading: false,
-        error: null,
-      }));
+        const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+          r.status === "fulfilled" ? r.value : fallback;
+
+        setState((s) => ({
+          ...s,
+          farmer: val(results[0], s.farmer),
+          centres: val(results[1], s.centres),
+          slot: val(results[2], s.slot),
+          ticket: val(results[3], s.ticket),
+          timeline: val(results[4], s.timeline),
+          payment: val(results[5], s.payment),
+          notifications: val(results[6], s.notifications),
+          isLoading: false,
+          error: null,
+        }));
+      } else if (role === "centre_operator") {
+        // OPERATOR: assigned centre, centre queue, alerts, notifications
+        const effectiveCentreId = centreId || "";
+        const results = await Promise.allSettled([
+          centreId ? centreService.getById(centreId) : centreService.list(), // 0
+          effectiveCentreId ? queueService.getCentreQueue(effectiveCentreId) : Promise.resolve([]), // 1
+          analyticsService.alerts(effectiveCentreId || undefined),           // 2
+          notificationsP,                                                    // 3
+          effectiveCentreId ? forecastService.queueForecast(effectiveCentreId) : Promise.resolve([]), // 4
+        ]);
+
+        const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+          r.status === "fulfilled" ? r.value : fallback;
+
+        const centreResult = results[0];
+        let centres: ProcurementCentre[] = [];
+        if (centreResult.status === "fulfilled") {
+          centres = Array.isArray(centreResult.value) ? centreResult.value : [centreResult.value as ProcurementCentre];
+        }
+
+        setState((s) => ({
+          ...s,
+          centres,
+          queueRows: val(results[1], s.queueRows),
+          alerts: val(results[2], s.alerts),
+          notifications: val(results[3], s.notifications),
+          forecast: val(results[4], s.forecast),
+          isLoading: false,
+          error: null,
+        }));
+      } else if (role === "district_admin") {
+        // DISTRICT ADMIN: district centres, all queue data, forecasts, analytics, recommendations, alerts, activity
+        const results = await Promise.allSettled([
+          district ? centreService.listByDistrict(district) : centreService.list(), // 0
+          forecastService.queueForecast(),                    // 1
+          forecastService.waitAnalytics(),                    // 2
+          forecastService.throughput(),                       // 3
+          recommendationService.current(),                    // 4
+          analyticsService.alerts(),                          // 5
+          analyticsService.activityFeed(),                    // 6
+          notificationsP,                                     // 7
+          intelligenceService.detectAnomalies(),              // 8
+          intelligenceService.predictCongestion(),            // 9
+        ]);
+
+        const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+          r.status === "fulfilled" ? r.value : fallback;
+
+        const rec = val(results[4], null as AiRecommendation | null);
+
+        setState((s) => ({
+          ...s,
+          centres: val(results[0], s.centres),
+          forecast: val(results[1], s.forecast),
+          waitAnalytics: val(results[2], s.waitAnalytics),
+          throughput: val(results[3], s.throughput),
+          recommendation: rec,
+          alerts: val(results[5], s.alerts),
+          activity: val(results[6], s.activity),
+          notifications: val(results[7], s.notifications),
+          anomalies: val(results[8], s.anomalies),
+          congestionPredictions: val(results[9], s.congestionPredictions),
+          interventionApplied: rec?.status === "approved",
+          isLoading: false,
+          error: null,
+        }));
+      } else if (role === "super_admin") {
+        // SUPER ADMIN: everything
+        const results = await Promise.allSettled([
+          centreService.list(),                               // 0
+          forecastService.queueForecast(),                    // 1
+          forecastService.waitAnalytics(),                    // 2
+          forecastService.throughput(),                       // 3
+          recommendationService.current(),                    // 4
+          analyticsService.alerts(),                          // 5
+          analyticsService.activityFeed(),                    // 6
+          notificationsP,                                     // 7
+          intelligenceService.detectAnomalies(),              // 8
+          intelligenceService.predictCongestion(),            // 9
+        ]);
+
+        const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+          r.status === "fulfilled" ? r.value : fallback;
+
+        const rec = val(results[4], null as AiRecommendation | null);
+
+        setState((s) => ({
+          ...s,
+          centres: val(results[0], s.centres),
+          forecast: val(results[1], s.forecast),
+          waitAnalytics: val(results[2], s.waitAnalytics),
+          throughput: val(results[3], s.throughput),
+          recommendation: rec,
+          alerts: val(results[5], s.alerts),
+          activity: val(results[6], s.activity),
+          notifications: val(results[7], s.notifications),
+          anomalies: val(results[8], s.anomalies),
+          congestionPredictions: val(results[9], s.congestionPredictions),
+          interventionApplied: rec?.status === "approved",
+          isLoading: false,
+          error: null,
+        }));
+      } else {
+        // Not authenticated or unknown role — load minimal public data
+        const results = await Promise.allSettled([centreService.list()]);
+        const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+          r.status === "fulfilled" ? r.value : fallback;
+
+        setState((s) => ({
+          ...s,
+          centres: val(results[0], s.centres),
+          isLoading: false,
+          error: null,
+        }));
+      }
     } catch (err: any) {
       setState((s) => ({ ...s, isLoading: false, error: err?.message || "Failed to load data" }));
     }
-  }, [user?.id]);
+  }, [user?.id, user?.role, user?.centreId, user?.district]);
+
+  /** Targeted refresh: just centres */
+  const refreshCentres = useCallback(async () => {
+    try {
+      const district = user?.district;
+      const role = user?.role;
+      let centres: ProcurementCentre[];
+      if (role === "district_admin" && district) {
+        centres = await centreService.listByDistrict(district);
+      } else {
+        centres = await centreService.list();
+      }
+      setState((s) => ({ ...s, centres }));
+    } catch (err) {
+      console.warn("Failed to refresh centres:", err);
+    }
+  }, [user?.district, user?.role]);
+
+  /** Targeted refresh: queue for a specific centre */
+  const refreshQueue = useCallback(async (centreId?: string) => {
+    try {
+      const cid = centreId || user?.centreId;
+      if (!cid) return;
+      const queueRows = await queueService.getCentreQueue(cid);
+      setState((s) => ({ ...s, queueRows }));
+    } catch (err) {
+      console.warn("Failed to refresh queue:", err);
+    }
+  }, [user?.centreId]);
+
+  /** Refresh intelligence data (anomalies + predictions) */
+  const refreshIntelligence = useCallback(async () => {
+    try {
+      const [anomalies, congestionPredictions] = await Promise.all([
+        intelligenceService.detectAnomalies(),
+        intelligenceService.predictCongestion(),
+      ]);
+      setState((s) => ({ ...s, anomalies, congestionPredictions }));
+    } catch (err) {
+      console.warn("Failed to refresh intelligence:", err);
+    }
+  }, []);
 
   // Initial load + realtime subscriptions
   useEffect(() => {
     refreshFromDatabase();
 
-    if (!user) return; // Don't subscribe if not logged in
+    if (!user) return;
 
+    const role = user.role;
     let ticketFilter: string | undefined;
     let paymentFilter: string | undefined;
     let centreFilter: string | undefined;
 
-    if (user.role === "farmer" && user.id) {
+    if (role === "farmer" && user.id) {
       ticketFilter = `farmer_id=eq.${user.id}`;
       paymentFilter = `farmer_id=eq.${user.id}`;
-    } else if (user.role === "centre_operator" && user.centreId) {
+    } else if (role === "centre_operator" && user.centreId) {
       ticketFilter = `centre_id=eq.${user.centreId}`;
       centreFilter = `id=eq.${user.centreId}`;
     }
@@ -208,68 +370,106 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     // NOTE: The Supabase JS SDK typing for postgres_changes has a known version mismatch.
     // The cast to `any` is intentional — all subscriptions function correctly at runtime.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const channel = (supabase.channel(`kisan-production-sync-${user.id}`) as any)
-      .on("postgres_changes", { event: "*", schema: "public", table: "procurement_centres", filter: centreFilter }, () => {
+    const channelBuilder = supabase.channel(`kisan-sync-${user.id}`) as any;
+
+    // ── Targeted Realtime Handlers ──
+
+    // Centre updates: refresh just centres
+    channelBuilder.on("postgres_changes", { event: "*", schema: "public", table: "procurement_centres", filter: centreFilter }, () => {
+      refreshCentres();
+    });
+
+    // Queue ticket updates: refresh relevant data based on role
+    channelBuilder.on("postgres_changes", { event: "*", schema: "public", table: "queue_tickets", filter: ticketFilter }, () => {
+      if (role === "farmer" && user.id) {
+        // Farmer: refresh ticket + timeline
+        queueService.getTicket(user.id).then((ticket) => setState((s) => ({ ...s, ticket }))).catch(() => {});
+        procurementService.getTimeline(undefined, user.id).then((timeline) => setState((s) => ({ ...s, timeline }))).catch(() => {});
+      } else if (role === "centre_operator" && user.centreId) {
+        refreshQueue(user.centreId);
+      } else {
+        // Admin roles: full refresh is acceptable (less frequent)
         refreshFromDatabase();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "queue_tickets", filter: ticketFilter }, () => {
-        refreshFromDatabase();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "procurement_timeline" }, () => {
-        refreshFromDatabase();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: paymentFilter }, () => {
-        refreshFromDatabase();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "slots" }, () => {
-        refreshFromDatabase();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "ai_recommendations" }, () => {
-        refreshFromDatabase();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "activity_feed" }, () => {
+      }
+    });
+
+    // Timeline updates (farmer-relevant)
+    if (role === "farmer") {
+      channelBuilder.on("postgres_changes", { event: "*", schema: "public", table: "procurement_timeline" }, () => {
+        if (user.id) {
+          procurementService.getTimeline(undefined, user.id).then((timeline) => setState((s) => ({ ...s, timeline }))).catch(() => {});
+        }
+      });
+    }
+
+    // Payment updates
+    channelBuilder.on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: paymentFilter }, () => {
+      if (role === "farmer" && user.id) {
+        paymentService.getStatus(user.id).then((payment) => setState((s) => ({ ...s, payment }))).catch(() => {});
+      }
+    });
+
+    // Slot updates
+    if (role === "farmer") {
+      channelBuilder.on("postgres_changes", { event: "*", schema: "public", table: "slots" }, () => {
+        slotService.suggest(undefined, user.id).then((slot) => setState((s) => ({ ...s, slot }))).catch(() => {});
+      });
+    }
+
+    // AI recommendations (admin roles only)
+    if (role === "district_admin" || role === "super_admin") {
+      channelBuilder.on("postgres_changes", { event: "*", schema: "public", table: "ai_recommendations" }, () => {
+        recommendationService.current().then((recommendation) => {
+          setState((s) => ({ ...s, recommendation, interventionApplied: recommendation?.status === "approved" }));
+        }).catch(() => {});
+      });
+    }
+
+    // Activity feed (admin roles only)
+    if (role === "district_admin" || role === "super_admin") {
+      channelBuilder.on("postgres_changes", { event: "*", schema: "public", table: "activity_feed" }, () => {
         analyticsService.activityFeed()
           .then((activity: any) => setState((s) => ({ ...s, activity })))
           .catch(() => {});
-      })
-      .on("postgres_changes", {
+      });
+    }
+
+    // Notifications (all users, scoped)
+    channelBuilder.on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "notifications",
+      filter: `user_id=eq.${user.id}`,
+    }, () => {
+      if (user?.id) {
+        notificationService.getForUser(user.id)
+          .then((notifications: any) => setState((s) => ({ ...s, notifications })))
+          .catch(() => {});
+      }
+    });
+
+    // Alerts
+    if (role === "centre_operator" || role === "district_admin" || role === "super_admin") {
+      channelBuilder.on("postgres_changes", {
         event: "*",
         schema: "public",
-        table: "notifications",
-        // Scope to THIS user's notifications only — prevents cross-user data leakage
-        filter: `user_id=eq.${user.id}`,
+        table: "centre_alerts",
+        filter: centreFilter ? `centre_id=eq.${user.centreId}` : undefined,
       }, () => {
-        if (user?.id) {
-          notificationService.getForUser(user.id)
-            .then((notifications: any) => setState((s) => ({ ...s, notifications })))
-            .catch(() => {});
-        }
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "centre_alerts", filter: centreFilter ? `centre_id=eq.${user.centreId}` : undefined }, () => {
-        analyticsService.alerts()
+        analyticsService.alerts(user.centreId || undefined)
           .then((alerts: any) => setState((s) => ({ ...s, alerts })))
           .catch(() => {});
-      })
-      .subscribe();
+      });
+    }
+
+    channelBuilder.subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(channelBuilder);
     };
-  }, [refreshFromDatabase, user]);
+  }, [refreshFromDatabase, refreshCentres, refreshQueue, user]);
 
   // ─── Actions ───
-
-  const pushActivity = useCallback((event: Omit<ActivityEvent, "id" | "at">) => {
-    const at = nowLabel();
-    setState((s) => ({
-      ...s,
-      activity: [
-        { id: `e-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`, at, ...event },
-        ...s.activity,
-      ].slice(0, 24),
-    }));
-    analyticsService.pushActivity(event).catch(() => {});
-  }, []);
 
   const setLanguage = useCallback((language: Language) => {
     setState((s) => ({ ...s, language }));
@@ -294,58 +494,22 @@ export function KisanProvider({ children }: { children: ReactNode }) {
         console.error("Failed to update farmer profile:", err);
       }
     }
-    pushActivity({ kind: "queue", message: `Farmer registration updated: ${updates.crop || "Wheat"} · ${updates.quantityQuintals || 0} qtl` });
-  }, [pushActivity, state.farmer?.id]);
+    analyticsService.pushActivity({ kind: "queue", message: `Farmer registration updated: ${updates.crop || "Wheat"} · ${updates.quantityQuintals || 0} qtl` }).catch(() => {});
+  }, [state.farmer?.id]);
 
   const operatorProcessTicket = useCallback(async (params: OperatorProcessParams) => {
     const result = await operatorService.processTicket(params);
-    await refreshFromDatabase();
+    // Targeted refresh: just the queue
+    if (user?.centreId) {
+      await refreshQueue(user.centreId);
+    }
     return result;
-  }, [refreshFromDatabase]);
+  }, [refreshQueue, user?.centreId]);
 
   const operatorUpdateCounters = useCallback(async (centreId: string, activeCounters: number) => {
     await operatorService.updateCounters(centreId, activeCounters);
-    await refreshFromDatabase();
-  }, [refreshFromDatabase]);
-
-  /** Operator trigger: Centre has surge */
-  const triggerOverload = useCallback(() => {
-    // Find the centre with highest capacity usage (dynamic, not hardcoded)
-    const overloadCentre = [...state.centres].sort((a, b) => b.capacityUsedPct - a.capacityUsedPct)[0];
-    if (!overloadCentre) return;
-
-    const newQueue = overloadCentre.queueLength + 16;
-    const newCapacity = Math.min(97, overloadCentre.capacityUsedPct + 6);
-
-    setState((s) => ({
-      ...s,
-      overloadTriggered: true,
-      centres: s.centres.map((c) =>
-        c.id === overloadCentre.id
-          ? { ...c, queueLength: newQueue, predictedWaitMin: 168, capacityUsedPct: newCapacity, farmersToday: c.farmersToday + 16 }
-          : c,
-      ),
-    }));
-
-    // Persist & create alert
-    centreService.update(overloadCentre.id, {
-      queueLength: newQueue, predictedWaitMin: 168, capacityUsedPct: newCapacity,
-      farmersToday: overloadCentre.farmersToday + 16,
-    }).catch(() => {});
-
-    analyticsService.createAlert(
-      overloadCentre.id, "critical",
-      `Unscheduled arrival surge at ${overloadCentre.name} — 16 walk-in tractors`,
-      `Queue ${overloadCentre.queueLength} → ${newQueue}. Safe capacity breach projected in 24 minutes.`
-    ).catch(() => {});
-
-    auditService.log({
-      action: "trigger_overload", targetType: "centre", targetId: overloadCentre.id,
-      metadata: { centre: overloadCentre.code, newQueue, newCapacity },
-    }).catch(() => {});
-
-    pushActivity({ kind: "ai", message: `Congestion model: ${overloadCentre.name} queue ${newQueue} · overload predicted in 24 min` });
-  }, [pushActivity, state.centres]);
+    await refreshCentres();
+  }, [refreshCentres]);
 
   const reviewRecommendation = useCallback(() => {
     if (!state.recommendation) return;
@@ -354,8 +518,8 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     auditService.log({
       action: "review_recommendation", targetType: "recommendation", targetId: state.recommendation.id,
     }).catch(() => {});
-    pushActivity({ kind: "admin", message: "District officer opened AI recommendation for review" });
-  }, [pushActivity, state.recommendation]);
+    analyticsService.pushActivity({ kind: "admin", message: "District officer opened AI recommendation for review" }).catch(() => {});
+  }, [state.recommendation]);
 
   const overrideRecommendation = useCallback(() => {
     if (!state.recommendation) return;
@@ -364,52 +528,44 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     auditService.log({
       action: "override_recommendation", targetType: "recommendation", targetId: state.recommendation.id,
     }).catch(() => {});
-    pushActivity({ kind: "admin", message: "AI recommendation overridden — manual staffing chosen" });
-  }, [pushActivity, state.recommendation]);
+    analyticsService.pushActivity({ kind: "admin", message: "AI recommendation overridden — manual decision applied" }).catch(() => {});
+  }, [state.recommendation]);
 
-  const approveRecommendation = useCallback(() => {
+  const approveRecommendation = useCallback(async () => {
     if (!state.recommendation) return;
     const rec = state.recommendation;
-    const shift = rec.action.shiftAppointments;
 
     setState((s) => ({
       ...s,
       interventionApplied: true,
       recommendation: s.recommendation ? { ...s.recommendation, status: "approved" } : null,
-      centres: s.centres.map((c) => {
-        if (c.id === rec.action.fromCentreId) {
-          return {
-            ...c,
-            queueLength: Math.max(8, c.queueLength - shift),
-            predictedWaitMin: Math.round(c.predictedWaitMin * 0.46),
-            capacityUsedPct: Math.min(c.capacityUsedPct, 74),
-            activeCounters: Math.min(c.totalCounters, c.activeCounters + 2),
-            processingRatePerHour: Math.round(c.processingRatePerHour * 1.33),
-          };
-        }
-        if (c.id === rec.action.toCentreId) {
-          return {
-            ...c,
-            queueLength: c.queueLength + Math.round(shift / 3),
-            predictedWaitMin: c.predictedWaitMin + 11,
-            capacityUsedPct: Math.min(95, c.capacityUsedPct + 17),
-            farmersToday: c.farmersToday + shift,
-          };
-        }
-        return c;
-      }),
-      forecast: s.forecast.map((p, i) => i >= 4 ? { ...p, predicted: Math.round(p.predicted * 0.62) } : p),
-      ticket: s.ticket ? { ...s.ticket, farmersAhead: Math.max(0, s.ticket.farmersAhead - 1), etaMinutes: Math.max(5, s.ticket.etaMinutes - 4) } : null,
     }));
 
-    recommendationService.approve(rec.id).catch(() => {});
-    auditService.log({
-      action: "approve_recommendation", targetType: "recommendation", targetId: rec.id,
-      metadata: { shift, from: rec.action.fromCentreId, to: rec.action.toCentreId },
-    }).catch(() => {});
+    try {
+      // Record the intervention with before-metrics
+      const affectedCentreIds = [rec.action.fromCentreId, rec.action.toCentreId].filter(Boolean);
+      const beforeMetrics = await interventionService.measureImpact(affectedCentreIds);
 
-    pushActivity({ kind: "admin", message: `APPROVED · ${shift} appointments re-routed` });
-  }, [pushActivity, state.recommendation]);
+      await recommendationService.approve(rec.id);
+
+      await interventionService.create({
+        recommendationId: rec.id,
+        type: "rebalance",
+        description: rec.headline,
+        appliedBy: user?.fullName || "District Admin",
+        affectedCentreIds,
+        metricsBefore: beforeMetrics || { avgWaitMin: 0, avgCapacityPct: 0, queueLength: 0 },
+      });
+
+      // Refresh centres and intelligence to reflect changes
+      await refreshCentres();
+      await refreshIntelligence();
+    } catch (err) {
+      console.error("Failed to approve recommendation:", err);
+    }
+
+    analyticsService.pushActivity({ kind: "admin", message: `APPROVED · ${rec.action.shiftAppointments} appointments re-routed` }).catch(() => {});
+  }, [state.recommendation, user?.fullName, refreshCentres, refreshIntelligence]);
 
   const markNotificationRead = useCallback(async (notifId: string) => {
     setState((s) => ({
@@ -450,23 +606,30 @@ export function KisanProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<KisanContextValue>(() => {
     const centres = state.centres;
+    const activeCentres = centres.filter((c) => c.farmersToday > 0 || c.queueLength > 0);
+
     const summary: DistrictSummary = {
       totalCentres: centres.length,
+      activeCentres: activeCentres.length,
       farmersToday: centres.reduce((n, c) => n + c.farmersToday, 0),
       quantityProcuredQuintals: centres.reduce((n, c) => n + c.procuredTodayQuintals, 0),
       averageWaitMin: centres.length ? Math.round(centres.reduce((n, c) => n + c.predictedWaitMin, 0) / centres.length) : 0,
       predictedOverloads: centres.filter((c) => c.capacityUsedPct >= 85).length,
+      paymentsPending: 0, // Will be populated from payments query when needed
+      openGrievances: 0,  // Will be populated from grievances query when needed
     };
 
     return {
       ...state,
       setLanguage,
       toggleLanguage,
-      triggerOverload,
       reviewRecommendation,
       approveRecommendation,
       overrideRecommendation,
       refreshFromDatabase,
+      refreshCentres,
+      refreshQueue,
+      refreshIntelligence,
       updateFarmerProfile,
       operatorProcessTicket,
       operatorUpdateCounters,
@@ -479,9 +642,10 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       recommendedCentre: centres.find((c) => c.recommended),
     };
   }, [
-    state, setLanguage, toggleLanguage, triggerOverload,
+    state, setLanguage, toggleLanguage,
     reviewRecommendation, approveRecommendation, overrideRecommendation,
-    refreshFromDatabase, updateFarmerProfile, operatorProcessTicket, operatorUpdateCounters,
+    refreshFromDatabase, refreshCentres, refreshQueue, refreshIntelligence,
+    updateFarmerProfile, operatorProcessTicket, operatorUpdateCounters,
     markNotificationRead, markAllNotificationsRead, deleteNotification, sendNotification,
   ]);
 

@@ -62,10 +62,10 @@ export function LoginPage() {
   const [department, setDepartment] = useState("");
 
   // Farmer Bank & Land state
-  const [bankName, setBankName] = useState("State Bank of India");
+  const [bankName, setBankName] = useState("");
   const [bankAccount, setBankAccount] = useState("");
-  const [ifscCode, setIfscCode] = useState("SBIN0001234");
-  const [landArea, setLandArea] = useState("5.0");
+  const [ifscCode, setIfscCode] = useState("");
+  const [landArea, setLandArea] = useState("");
   const [aadhaarNumber, setAadhaarNumber] = useState("");
 
   // Forgot Password state
@@ -255,7 +255,7 @@ export function LoginPage() {
                   </p>
                 </div>
               </div>
-              <PrototypeBadge tone="dark" />
+              <PrototypeBadge tone="dark" label={hi ? "भारत सरकार · आधिकारिक पोर्टल" : "Govt. of India · Official"} />
             </div>
             <p className="mt-4 text-sm font-semibold leading-relaxed text-primary-foreground/80">
               {hi

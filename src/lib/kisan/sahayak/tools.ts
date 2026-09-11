@@ -65,8 +65,8 @@ export const SahayakTools = {
         toolName: "getFarmerProfile",
         success: true,
         data: profile,
-        summaryEn: profile ? `Farmer ${profile.name} (${profile.farmerId || "Registered"}), Bank: ${profile.bankName || "SBI"} (${profile.bankAccountMasked || "••••4417"}), IFSC: ${profile.ifscCode || "SBIN0001234"}, Land: ${profile.landAreaAcres || 5} Acres, Crop: ${profile.crop}, ${profile.quantityQuintals} Quintals.` : "No registered profile found.",
-        summaryHi: profile ? `किसान ${profile.nameHi || profile.name} (${profile.farmerId || "पंजीकृत"}), बैंक: ${profile.bankName || "SBI"} (${profile.bankAccountMasked || "••••4417"}), IFSC: ${profile.ifscCode || "SBIN0001234"}, भूमि: ${profile.landAreaAcres || 5} एकड़, फसल: ${profile.cropHi || profile.crop}, ${profile.quantityQuintals} क्विंटल।` : "कोई किसान प्रोफ़ाइल नहीं मिली।",
+        summaryEn: profile ? `Farmer ${profile.name} (${profile.farmerId || "Registered"}), Bank: ${profile.bankName ? `${profile.bankName} (${profile.bankAccountMasked || "Aadhaar Linked"})` : "Not Linked"}, IFSC: ${profile.ifscCode || "N/A"}, Land: ${profile.landAreaAcres ? `${profile.landAreaAcres} Acres` : "Unspecified"}, Crop: ${profile.crop}, ${profile.quantityQuintals} Quintals.` : "No registered profile found.",
+        summaryHi: profile ? `किसान ${profile.nameHi || profile.name} (${profile.farmerId || "पंजीकृत"}), बैंक: ${profile.bankName ? `${profile.bankName} (${profile.bankAccountMasked || "आधार लिंक्ड"})` : "लिंक नहीं"}, IFSC: ${profile.ifscCode || "लागू नहीं"}, भूमि: ${profile.landAreaAcres ? `${profile.landAreaAcres} एकड़` : "अनिर्दिष्ट"}, फसल: ${profile.cropHi || profile.crop}, ${profile.quantityQuintals} क्विंटल।` : "कोई किसान प्रोफ़ाइल नहीं मिली।",
       };
     } catch (err: any) {
       return {
@@ -237,8 +237,8 @@ export const SahayakTools = {
         toolName: "getAvailableSlots",
         success: true,
         data: slots,
-        summaryEn: slots.length > 0 ? `${slots.length} slots available. Earliest: ${slots[0].window}.` : "No slots currently available.",
-        summaryHi: slots.length > 0 ? `${slots.length} स्लॉट उपलब्ध हैं। पहला स्लॉट: ${slots[0].window}।` : "वर्तमान में कोई स्लॉट उपलब्ध नहीं है।",
+        summaryEn: slots.length > 0 ? `${slots.length} slots available. Earliest: ${slots[0]?.window}.` : "No slots currently available.",
+        summaryHi: slots.length > 0 ? `${slots.length} स्लॉट उपलब्ध हैं। पहला स्लॉट: ${slots[0]?.window}।` : "वर्तमान में कोई स्लॉट उपलब्ध नहीं है।",
       };
     } catch (err: any) {
       return {
@@ -444,7 +444,7 @@ export const SahayakTools = {
         centreId: params.centreId || "",
         centreName: params.centreName || "",
         district: params.district || "",
-        category: params.category,
+        category: (params.category || "other") as any,
         subject: params.subject,
         description: params.description,
         priority: params.priority || "medium",

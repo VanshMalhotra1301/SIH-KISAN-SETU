@@ -2,12 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageShell } from "@/components/kisan/app-shell";
 import { AuthGuard } from "@/components/kisan/auth-guard";
-import { CapacityBar, HealthDot, Pill, PrototypeBadge, SectionLabel, StatCard } from "@/components/kisan/primitives";
+import { CapacityBar, HealthDot, Pill, SectionLabel, StatCard } from "@/components/kisan/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { adminService, grievanceService, type AdminUser } from "@/lib/kisan/services";
 import { centreHealth, useKisan } from "@/lib/kisan/store";
+import { intelligenceEngine } from "@/lib/kisan/intelligence";
 import { supabase } from "@/lib/supabase/client";
-import type { ActivityEvent, AiRecommendation, CentreAlert, Grievance, ProcurementCentre } from "@/lib/kisan/types";
+import type { AnomalyDetection, CongestionPrediction, Grievance, ProcurementCentre } from "@/lib/kisan/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin")({
@@ -27,37 +28,21 @@ export const Route = createFileRoute("/admin")({
 type AdminSection =
   | "overview"
   | "radar"
+  | "benchmarking"
   | "grievances"
   | "intelligence"
   | "districts"
   | "payments"
   | "alerts"
+  | "policy"
   | "governance"
   | "administration";
 
-const grievanceCategoryIcons: Record<Grievance["category"], string> = {
-  weighing: "⚖️",
-  delay: "⏱️",
-  payment: "💰",
-  quality_rejection: "🔬",
-  staff_conduct: "👔",
-  portal_bug: "💻",
-  other: "📋",
-};
-
 const priorityStyles: Record<Grievance["priority"], { label: string; badge: string }> = {
-  critical: { label: "Critical", badge: "bg-danger/20 text-danger border-danger/40" },
-  high: { label: "High", badge: "bg-saffron/20 text-saffron border-saffron/40" },
-  medium: { label: "Medium", badge: "bg-cyan-signal/20 text-cyan-signal border-cyan-signal/40" },
-  low: { label: "Low", badge: "bg-muted/40 text-command-muted border-command-line" },
-};
-
-const statusStyles: Record<Grievance["status"], { label: string; tone: "leaf" | "danger" | "saffron" | "navy" | "muted" }> = {
-  new: { label: "New", tone: "danger" },
-  pending: { label: "Under Investigation", tone: "saffron" },
-  escalated: { label: "Escalated to Board", tone: "danger" },
-  resolved: { label: "Resolved", tone: "leaf" },
-  reopened: { label: "Reopened", tone: "navy" },
+  critical: { label: "Critical", badge: "bg-danger-soft text-danger border-danger/30" },
+  high: { label: "High", badge: "bg-saffron-soft text-saffron border-saffron/30" },
+  medium: { label: "Medium", badge: "bg-navy-soft text-navy border-navy/30" },
+  low: { label: "Low", badge: "bg-muted text-muted-foreground border-border" },
 };
 
 export function SuperAdminCommandPlatform() {
@@ -74,9 +59,13 @@ export function SuperAdminCommandPlatform() {
   const [grievances, setGrievances] = useState<Grievance[]>([]);
   const [paymentsList, setPaymentsList] = useState<any[]>([]);
   const [systemStats, setSystemStats] = useState<any>(null);
+  const [liveAnomalies, setLiveAnomalies] = useState<AnomalyDetection[]>([]);
+  const [livePredictions, setLivePredictions] = useState<CongestionPrediction[]>([]);
 
-  // Interaction States
-  const [selectedCentre, setSelectedCentre] = useState<ProcurementCentre | null>(null);
+  // Search & Filter States
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [userRoleFilter, setUserRoleFilter] = useState("all");
+  const [auditFilter, setAuditFilter] = useState("all");
   const [selectedGrievance, setSelectedGrievance] = useState<Grievance | null>(null);
   const [grievanceFilter, setGrievanceFilter] = useState<string>("all");
   const [grievancePriorityFilter, setGrievancePriorityFilter] = useState<string>("all");
@@ -89,18 +78,22 @@ export function SuperAdminCommandPlatform() {
   const loadPlatformData = useCallback(async () => {
     setLoading(true);
     try {
-      const [u, a, s, g, p] = await Promise.all([
+      const [u, a, s, g, p, anom, pred] = await Promise.all([
         adminService.listUsers(),
-        adminService.listAuditLogs({ limit: 60 }),
+        adminService.listAuditLogs({ limit: 80 }),
         adminService.getSystemStats(),
         grievanceService.list(),
-        supabase.from("payments").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("payments").select("*").order("created_at", { ascending: false }).limit(60),
+        intelligenceEngine.detectAnomalies(),
+        intelligenceEngine.predictCongestion(),
       ]);
       setUsers(u);
       setAuditLogs(a);
       setSystemStats(s);
       setGrievances(g);
       setPaymentsList(p.data || []);
+      setLiveAnomalies(anom);
+      setLivePredictions(pred);
     } catch (err) {
       console.error("Failed to load command platform data", err);
     } finally {
@@ -118,7 +111,7 @@ export function SuperAdminCommandPlatform() {
         grievanceService.list().then(setGrievances).catch(() => {});
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, () => {
-        supabase.from("payments").select("*").order("created_at", { ascending: false }).limit(50).then((res) => {
+        supabase.from("payments").select("*").order("created_at", { ascending: false }).limit(60).then((res) => {
           if (res.data) setPaymentsList(res.data);
         });
       })
@@ -147,6 +140,47 @@ export function SuperAdminCommandPlatform() {
 
   const openGrievances = grievances.filter((g) => g.status !== "resolved");
   const criticalGrievances = grievances.filter((g) => g.priority === "critical" && g.status !== "resolved");
+
+  // Filtered Users
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      if (userRoleFilter !== "all" && u.role !== userRoleFilter) return false;
+      if (userSearchQuery) {
+        const q = userSearchQuery.toLowerCase();
+        const matches =
+          (u.fullName && u.fullName.toLowerCase().includes(q)) ||
+          (u.email && u.email.toLowerCase().includes(q)) ||
+          (u.district && u.district.toLowerCase().includes(q));
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [users, userSearchQuery, userRoleFilter]);
+
+  // Filtered Audit Logs
+  const filteredAuditLogs = useMemo(() => {
+    if (auditFilter === "all") return auditLogs;
+    return auditLogs.filter((l) => (l.action && l.action.toLowerCase().includes(auditFilter)) || (l.actorRole && l.actorRole.toLowerCase().includes(auditFilter)));
+  }, [auditLogs, auditFilter]);
+
+  // Filtered grievances
+  const filteredGrievances = useMemo(() => {
+    return grievances.filter((g) => {
+      if (grievanceFilter !== "all" && g.status !== grievanceFilter) return false;
+      if (grievancePriorityFilter !== "all" && g.priority !== grievancePriorityFilter) return false;
+      return true;
+    });
+  }, [grievances, grievanceFilter, grievancePriorityFilter]);
+
+  // Ranked Centre Benchmarking
+  const benchmarkedCentres = useMemo(() => {
+    return [...centres].sort((a, b) => {
+      // Sort by operational throughput efficiency
+      const aEfficiency = a.processingRatePerHour * a.activeCounters - a.predictedWaitMin;
+      const bEfficiency = b.processingRatePerHour * b.activeCounters - b.predictedWaitMin;
+      return bEfficiency - aEfficiency;
+    });
+  }, [centres]);
 
   // Grievance Handlers
   const handleAssignGrievance = async (id: string) => {
@@ -214,106 +248,23 @@ export function SuperAdminCommandPlatform() {
     }
   };
 
-  // Filtered grievances
-  const filteredGrievances = useMemo(() => {
-    return grievances.filter((g) => {
-      if (grievanceFilter !== "all" && g.status !== grievanceFilter) return false;
-      if (grievancePriorityFilter !== "all" && g.priority !== grievancePriorityFilter) return false;
-      return true;
-    });
-  }, [grievances, grievanceFilter, grievancePriorityFilter]);
-
-  // Filtered centres for map radar
-  const filteredCentres = useMemo(() => {
-    return centres.filter((c) => {
-      const health = centreHealth(c.capacityUsedPct);
-      if (centreStatusFilter === "normal") return health === "green";
-      if (centreStatusFilter === "warning") return health === "yellow";
-      if (centreStatusFilter === "critical") return health === "red";
-      if (centreStatusFilter === "offline") return c.status === "inactive";
-      return true;
-    });
-  }, [centres, centreStatusFilter]);
-
-  // District Aggregations
-  const districtScorecards = useMemo(() => {
-    const districtMap: Record<string, {
-      district: string;
-      centresCount: number;
-      farmersServed: number;
-      procuredQtl: number;
-      totalWait: number;
-      totalCapacityUsed: number;
-      openComplaints: number;
-      resolvedComplaints: number;
-    }> = {};
-
-    users.forEach((u) => {
-      const d = u.district || "Operational Region";
-      if (!districtMap[d]) {
-        districtMap[d] = {
-          district: d,
-          centresCount: 0,
-          farmersServed: 0,
-          procuredQtl: 0,
-          totalWait: 0,
-          totalCapacityUsed: 0,
-          openComplaints: 0,
-          resolvedComplaints: 0,
-        };
-      }
-      if (u.role === "farmer") districtMap[d].farmersServed += 1;
-    });
-
-    centres.forEach((c) => {
-      const d = "Karnal Division"; // Primary cluster
-      if (!districtMap[d]) {
-        districtMap[d] = {
-          district: d,
-          centresCount: 0,
-          farmersServed: 0,
-          procuredQtl: 0,
-          totalWait: 0,
-          totalCapacityUsed: 0,
-          openComplaints: 0,
-          resolvedComplaints: 0,
-        };
-      }
-      districtMap[d].centresCount += 1;
-      districtMap[d].farmersServed += c.farmersToday;
-      districtMap[d].procuredQtl += c.procuredTodayQuintals;
-      districtMap[d].totalWait += c.predictedWaitMin;
-      districtMap[d].totalCapacityUsed += c.capacityUsedPct;
-    });
-
-    grievances.forEach((g) => {
-      const d = g.district || "Operational Region";
-      if (districtMap[d]) {
-        if (g.status === "resolved") districtMap[d].resolvedComplaints += 1;
-        else districtMap[d].openComplaints += 1;
-      }
-    });
-
-    return Object.values(districtMap);
-  }, [users, centres, grievances]);
-
   return (
     <AuthGuard allowedRoles={["super_admin"]}>
-      <PageShell tone="dark">
+      <PageShell tone="light">
         {/* ─── COMMAND BANNER & HEADER ─── */}
-        <div className="flex flex-col gap-4 border-b border-command-line pb-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4 border-b border-border pb-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-signal/15 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.16em] text-cyan-signal border border-cyan-signal/30">
-                <span className="size-2 rounded-full bg-cyan-signal animate-blip" />
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-leaf-soft px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.16em] text-navy border border-leaf/30">
+                <span className="size-2 rounded-full bg-leaf animate-blip" />
                 {hi ? "राष्ट्रीय / राज्य खरीद कमान केंद्र" : "State Procurement Command & Oversight Platform"}
               </span>
               <Pill tone="danger">{hi ? "उच्चतम प्रशासनिक अधिकार" : "Apex Directorate Oversight"}</Pill>
             </div>
-            <h1 className="mt-2 font-display text-3xl font-extrabold text-command-fg sm:text-4xl">
+            <h1 className="mt-2 font-display text-3xl font-extrabold text-navy sm:text-4xl">
               {hi ? "राज्य खाद्य एवं नागरिक आपूर्ति कमान केंद्र" : "State Directorate Procurement Command"}
             </h1>
-            <p className="mt-1 text-sm text-command-muted">
+            <p className="mt-1 text-sm text-muted-foreground">
               {hi
                 ? "समस्त खरीद केंद्र, कतारें, डीबीटी भुगतान, किसान शिकायतें एवं एआई नीतिगत निर्णय का लाइव नियंत्रण"
                 : "Real-time state surveillance: Farmers → Procurement Centres → Direct Payments → Grievance Redressal → AI Policy Sentinel"}
@@ -324,20 +275,23 @@ export function SuperAdminCommandPlatform() {
             <button
               type="button"
               onClick={loadPlatformData}
-              className="flex items-center gap-2 rounded-xl border border-command-line bg-command-panel px-4 py-2.5 text-xs font-bold text-command-fg transition-colors hover:bg-command-line focus-ring"
+              className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-bold text-navy shadow-2xs transition-colors hover:bg-muted focus-ring"
             >
               <span>↺</span>
               <span>{loading ? (hi ? "सिंक हो रहा है..." : "Syncing DB...") : hi ? "लाइव सिंक" : "Live Refresh"}</span>
             </button>
-            <PrototypeBadge tone="dark" />
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-leaf/40 bg-leaf-soft px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-navy">
+              <span className="size-1.5 rounded-full bg-leaf animate-blip" />
+              Govt of India · Apex
+            </span>
           </div>
         </div>
 
         {/* Success Banner */}
         {successBanner && (
-          <div className="mt-4 flex items-center justify-between rounded-xl border border-leaf/40 bg-leaf/10 p-3 text-xs font-bold text-leaf animate-fade-in">
+          <div className="mt-4 flex items-center justify-between rounded-xl border border-leaf/40 bg-leaf-soft p-3 text-xs font-bold text-navy animate-fade-in">
             <span>{successBanner}</span>
-            <button type="button" onClick={() => setSuccessBanner(null)} className="text-leaf/70 hover:text-leaf">
+            <button type="button" onClick={() => setSuccessBanner(null)} className="text-muted-foreground hover:text-navy">
               ✕
             </button>
           </div>
@@ -345,27 +299,26 @@ export function SuperAdminCommandPlatform() {
 
         {/* ─── 1. EXECUTIVE STATE TELEMETRY GRID ─── */}
         <section className="mt-6 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-          <StatCard tone="dark" label={hi ? "कुल पंजीकृत किसान" : "Registered Farmers"} value={totalFarmers} accent="leaf" />
-          <StatCard tone="dark" label={hi ? "सक्रिय खरीद केंद्र" : "Active Centres"} value={`${activeCentresCount}/${centres.length}`} accent="navy" />
-          <StatCard tone="dark" label={hi ? "कतार में लाइव किसान" : "Live In Queue"} value={totalLiveQueue} accent={totalLiveQueue > 30 ? "danger" : "saffron"} />
-          <StatCard tone="dark" label={hi ? "आज की खरीद (क्विंटल)" : "Procured Today"} value={totalProcuredToday.toLocaleString("en-IN")} unit="qtl" accent="leaf" />
-          <StatCard tone="dark" label={hi ? "राज्य औसत प्रतीक्षा" : "Avg State Wait"} value={stateAverageWaitMin} unit="min" accent={stateAverageWaitMin > 60 ? "danger" : "leaf"} />
-          <StatCard tone="dark" label={hi ? "स्वीकृत भुगतान (DBT)" : "Approved Payout"} value={`₹${(approvedPaymentsAmount / 100000).toFixed(1)}L`} accent="leaf" />
-          <StatCard tone="dark" label={hi ? "सक्रिय शिकायतें" : "Open Grievances"} value={openGrievances.length} accent={openGrievances.length > 5 ? "danger" : "saffron"} />
-          <StatCard tone="dark" label={hi ? "क्रिटिकल अलर्ट" : "Critical Warnings"} value={criticalCentresCount + criticalGrievances.length} accent="danger" />
+          <StatCard tone="light" label={hi ? "कुल पंजीकृत किसान" : "Registered Farmers"} value={totalFarmers} accent="leaf" />
+          <StatCard tone="light" label={hi ? "सक्रिय खरीद केंद्र" : "Active Centres"} value={`${activeCentresCount}/${centres.length}`} accent="navy" />
+          <StatCard tone="light" label={hi ? "कतार में लाइव किसान" : "Live In Queue"} value={totalLiveQueue} accent={totalLiveQueue > 30 ? "danger" : "saffron"} />
+          <StatCard tone="light" label={hi ? "आज की खरीद (क्विंटल)" : "Procured Today"} value={totalProcuredToday.toLocaleString("en-IN")} unit="qtl" accent="leaf" />
+          <StatCard tone="light" label={hi ? "राज्य औसत प्रतीक्षा" : "Avg State Wait"} value={stateAverageWaitMin} unit="min" accent={stateAverageWaitMin > 60 ? "danger" : "leaf"} />
+          <StatCard tone="light" label={hi ? "स्वीकृत भुगतान (DBT)" : "Approved Payout"} value={`₹${(approvedPaymentsAmount / 100000).toFixed(1)}L`} accent="leaf" />
+          <StatCard tone="light" label={hi ? "सक्रिय शिकायतें" : "Open Grievances"} value={openGrievances.length} accent={openGrievances.length > 5 ? "danger" : "saffron"} />
+          <StatCard tone="light" label={hi ? "एआई विसंगतियां" : "Live Anomalies"} value={liveAnomalies.length} accent={liveAnomalies.length > 0 ? "danger" : "leaf"} />
         </section>
 
         {/* ─── NAVIGATION TABS ─── */}
-        <div className="mt-8 flex gap-1.5 overflow-x-auto border-b border-command-line pb-3 text-xs font-bold">
+        <div className="mt-8 flex gap-1.5 overflow-x-auto border-b border-border pb-3 text-xs font-bold">
           {[
             { id: "overview", label: hi ? "📊 राज्य सारांश" : "📊 State Overview" },
-            { id: "radar", label: hi ? "🛰️ लाइव केंद्र मैप / रडार" : "🛰️ Live Centre Radar" },
+            { id: "benchmarking", label: hi ? "🏆 केंद्र बेंचमार्किंग" : "🏆 Benchmarking & Targets" },
             { id: "grievances", label: hi ? `⚖️ शिकायत निवारण (${openGrievances.length})` : `⚖️ Grievances (${openGrievances.length})` },
-            { id: "intelligence", label: hi ? "🤖 एआई नीतिगत सलाह" : "🤖 AI Policy Sentinel" },
-            { id: "districts", label: hi ? "🏛️ जिला तुलना" : "🏛️ District Scorecards" },
+            { id: "intelligence", label: hi ? `🤖 एआई सेंटिनल (${liveAnomalies.length})` : `🤖 AI Sentinel (${liveAnomalies.length})` },
             { id: "payments", label: hi ? "💰 डीबीटी भुगतान निगरानी" : "💰 DBT Payment SLA" },
-            { id: "alerts", label: hi ? `🚨 अलर्ट इनबॉक्स (${liveAlerts.length})` : `🚨 Alert Inbox (${liveAlerts.length})` },
-            { id: "governance", label: hi ? "📜 ऑडिट एवं गवर्नेंस" : "📜 Governance Audit" },
+            { id: "policy", label: hi ? "📜 एमएसपी नीति एवं नियम" : "📜 Policy & MSP Rates" },
+            { id: "governance", label: hi ? "🛡️ ऑडिट एवं सिस्टम स्वास्थ्य" : "🛡️ Audit & System Health" },
             { id: "administration", label: hi ? `⚙️ प्रशासन (${users.length})` : `⚙️ Administration (${users.length})` },
           ].map((tab) => (
             <button
@@ -375,8 +328,8 @@ export function SuperAdminCommandPlatform() {
               className={cn(
                 "whitespace-nowrap rounded-xl px-4 py-2.5 transition-all focus-ring",
                 activeSection === tab.id
-                  ? "bg-command-line text-cyan-signal shadow-sm border border-cyan-signal/30"
-                  : "text-command-muted hover:bg-command-panel hover:text-command-fg"
+                  ? "bg-navy text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-navy"
               )}
             >
               {tab.label}
@@ -385,455 +338,186 @@ export function SuperAdminCommandPlatform() {
         </div>
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 1: STATE OVERVIEW & LIVE SURVEILLANCE
+            TAB 1: STATE OVERVIEW & TELEMETRY
         ══════════════════════════════════════════════════════════════ */}
         {activeSection === "overview" && (
           <div className="mt-6 space-y-6">
-            {/* Top Operational Status Bar */}
             <div className="grid gap-4 lg:grid-cols-3">
               {/* Centre Health Breakdown */}
-              <div className="panel-command p-5 space-y-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-signal">
+              <div className="surface-lift p-5 space-y-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-navy">
                   {hi ? "केंद्र स्वास्थ्य स्थिति" : "State Centre Operational Health"}
                 </p>
                 <div className="flex items-center justify-between gap-2 pt-1">
                   <div className="flex items-center gap-2">
                     <span className="size-3 rounded-full bg-leaf animate-pulse" />
-                    <span className="text-sm font-bold text-command-fg">{normalCentresCount} Normal</span>
+                    <span className="text-sm font-bold text-navy">{normalCentresCount} Normal</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="size-3 rounded-full bg-saffron" />
-                    <span className="text-sm font-bold text-command-fg">{warningCentresCount} Strained</span>
+                    <span className="text-sm font-bold text-navy">{warningCentresCount} Strained</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="size-3 rounded-full bg-danger animate-blip" />
-                    <span className="text-sm font-bold text-command-fg">{criticalCentresCount} Critical</span>
+                    <span className="text-sm font-bold text-navy">{criticalCentresCount} Critical</span>
                   </div>
                 </div>
                 <div className="pt-2">
-                  <CapacityBar pct={Math.round((totalProcuredToday / Math.max(1, totalDailyCapacity)) * 100)} tone="dark" />
-                  <p className="mt-2 text-xs text-command-muted">
+                  <CapacityBar pct={Math.round((totalProcuredToday / Math.max(1, totalDailyCapacity)) * 100)} tone="light" />
+                  <p className="mt-2 text-xs text-muted-foreground">
                     {totalProcuredToday.toLocaleString("en-IN")} / {totalDailyCapacity.toLocaleString("en-IN")} quintals daily target capacity utilized
                   </p>
                 </div>
               </div>
 
               {/* DBT Payment Pipeline */}
-              <div className="panel-command p-5 space-y-3">
+              <div className="surface-lift p-5 space-y-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-leaf">
                   {hi ? "डीबीटी भुगतान पाइपलाइन" : "PFMS DBT Payment Performance"}
                 </p>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-2xl font-extrabold text-leaf font-display">₹{totalPaymentsAmount.toLocaleString("en-IN")}</p>
-                    <p className="text-xs text-command-muted">Total Gross MSP Payout Computed</p>
+                    <p className="text-xs text-muted-foreground">Total Gross MSP Payout Computed</p>
                   </div>
                   <Pill tone="leaf">48h SLA: 98.4%</Pill>
                 </div>
                 <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
-                  <div className="rounded-lg bg-command-panel p-2">
-                    <span className="text-command-muted">Credited/Approved:</span>
+                  <div className="rounded-lg bg-muted/60 p-2.5">
+                    <span className="text-muted-foreground">Credited/Approved:</span>
                     <p className="font-bold text-leaf">₹{approvedPaymentsAmount.toLocaleString("en-IN")}</p>
                   </div>
-                  <div className="rounded-lg bg-command-panel p-2">
-                    <span className="text-command-muted">Under Processing:</span>
+                  <div className="rounded-lg bg-muted/60 p-2.5">
+                    <span className="text-muted-foreground">Under Processing:</span>
                     <p className="font-bold text-saffron">₹{pendingPaymentsAmount.toLocaleString("en-IN")}</p>
                   </div>
                 </div>
               </div>
 
               {/* Grievance & SLA Snapshot */}
-              <div className="panel-command p-5 space-y-3">
+              <div className="surface-lift p-5 space-y-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-saffron">
                   {hi ? "किसान शिकायत स्थिति" : "Grievance Redressal SLA"}
                 </p>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-2xl font-extrabold text-command-fg font-display">
-                      {openGrievances.length} <span className="text-sm font-normal text-command-muted">Active Cases</span>
-                    </p>
-                    <p className="text-xs text-command-muted">{criticalGrievances.length} marked as High/Critical priority</p>
+                    <p className="text-2xl font-extrabold text-saffron font-display">{openGrievances.length} Open</p>
+                    <p className="text-xs text-muted-foreground">{criticalGrievances.length} Critical Priority</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setActiveSection("grievances")}
-                    className="rounded-lg bg-saffron/20 border border-saffron/40 px-3 py-1.5 text-xs font-bold text-saffron hover:bg-saffron/30"
+                    className="rounded-xl bg-navy-soft px-3 py-1.5 text-xs font-bold text-navy hover:bg-muted focus-ring transition-colors"
                   >
-                    Open Desk →
+                    Resolve →
                   </button>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-center text-xs pt-1">
-                  <div className="rounded-lg bg-command-panel p-1.5">
-                    <p className="font-bold text-danger">{grievances.filter((g) => g.status === "new").length}</p>
-                    <span className="text-[10px] text-command-muted">New</span>
-                  </div>
-                  <div className="rounded-lg bg-command-panel p-1.5">
-                    <p className="font-bold text-saffron">{grievances.filter((g) => g.status === "escalated").length}</p>
-                    <span className="text-[10px] text-command-muted">Escalated</span>
-                  </div>
-                  <div className="rounded-lg bg-command-panel p-1.5">
-                    <p className="font-bold text-leaf">{grievances.filter((g) => g.status === "resolved").length}</p>
-                    <span className="text-[10px] text-command-muted">Resolved</span>
-                  </div>
+                <div className="flex justify-between text-xs text-muted-foreground pt-2 border-t border-border">
+                  <span>Resolved Cases: <strong className="text-navy">{grievances.filter((g) => g.status === "resolved").length}</strong></span>
+                  <span>Avg Resolution: <strong className="text-navy">14.2 hours</strong></span>
                 </div>
-              </div>
-            </div>
-
-            {/* Live Surveillance Stream & Active Interventions */}
-            <div className="grid gap-6 lg:grid-cols-2">
-              {/* Live Operational Intelligence Feed */}
-              <div className="panel-command overflow-hidden">
-                <div className="flex items-center justify-between border-b border-command-line px-5 py-4">
-                  <div>
-                    <SectionLabel tone="dark">{hi ? "लाइव सर्विलांस फ़ीड" : "Live State Surveillance Feed"}</SectionLabel>
-                    <h3 className="mt-1 font-display text-lg font-extrabold text-command-fg">Real-time Stream</h3>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-signal">
-                    <span className="size-2 rounded-full bg-cyan-signal animate-blip" /> Live
-                  </span>
-                </div>
-                <div className="divide-y divide-command-line max-h-[380px] overflow-y-auto">
-                  {liveActivity.map((evt) => (
-                    <div key={evt.id} className="flex items-start gap-3 p-4 hover:bg-command-panel/60 transition-colors">
-                      <span className="text-lg">
-                        {evt.kind === "queue" ? "📋" : evt.kind === "ai" ? "🤖" : evt.kind === "payment" ? "💰" : "🏢"}
-                      </span>
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold text-command-fg">{evt.message}</p>
-                        <span className="text-[10px] font-mono text-command-muted">{evt.at}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Active AI Policy Recommendations */}
-              <div className="panel-command p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-command-line pb-3">
-                  <div>
-                    <SectionLabel tone="dark">{hi ? "सक्रिय एआई नीति सुझाव" : "Apex AI Policy Interventions"}</SectionLabel>
-                    <h3 className="mt-1 font-display text-lg font-extrabold text-command-fg">Congestion Balancing</h3>
-                  </div>
-                  <Pill tone="saffron">Confidence: {recommendation?.confidencePct || 89}%</Pill>
-                </div>
-
-                {recommendation ? (
-                  <div className="space-y-4 rounded-xl border border-command-line bg-command-panel p-4">
-                    <div>
-                      <p className="text-sm font-extrabold text-command-fg">{recommendation.headline}</p>
-                      <p className="mt-1 text-xs text-command-muted leading-relaxed">{recommendation.rationale}</p>
-                    </div>
-
-                    <div className="rounded-lg bg-leaf-soft/20 border border-leaf/30 p-3 text-xs text-leaf">
-                      💡 <strong>Projected Impact:</strong> {recommendation.impact}
-                    </div>
-
-                    {recommendation.status === "pending" || recommendation.status === "reviewing" ? (
-                      <div className="flex items-center gap-3 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            approveRecommendation();
-                            setSuccessBanner("✓ AI Redistribution Plan approved and issued to affected procurement centres.");
-                          }}
-                          className="flex-1 rounded-xl bg-gradient-leaf py-2.5 text-xs font-bold text-primary-foreground hover:scale-[1.01] transition-transform focus-ring"
-                        >
-                          ✓ Execute Directive
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            overrideRecommendation();
-                            setSuccessBanner("Directive overridden — manual staffing order logged.");
-                          }}
-                          className="rounded-xl border border-command-line bg-command-panel px-4 py-2.5 text-xs font-bold text-command-muted hover:text-danger focus-ring"
-                        >
-                          Override
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="rounded-lg bg-command p-2.5 text-center text-xs font-bold text-leaf">
-                        ✓ Directive Executed & Applied to State Schedule
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-8 text-center text-xs font-semibold text-command-muted">
-                    All centres operating within optimal safe thresholds. Continuous ML monitoring active.
-                  </div>
-                )}
               </div>
             </div>
           </div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 2: LIVE GOVERNMENT CONTROL TOWER & RADAR MAP
+            TAB 2: CENTRE BENCHMARKING & TARGETS VS ACTUAL
         ══════════════════════════════════════════════════════════════ */}
-        {activeSection === "radar" && (
-          <div className="mt-6 grid gap-6 lg:grid-cols-[1.8fr_1fr]">
-            {/* Left: Centre Map & Filter Bar */}
-            <div className="panel-command p-5 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-command-line pb-4">
-                <div>
-                  <SectionLabel tone="dark">{hi ? "राज्य खरीद रडार" : "State Procurement Radar"}</SectionLabel>
-                  <h2 className="mt-1 font-display text-xl font-extrabold text-command-fg">
-                    {hi ? "समस्त परिचालन क्षेत्र एवं खरीद केंद्र" : "Operational Centres Surveillance"}
-                  </h2>
-                </div>
-
-                {/* Status Filter Buttons */}
-                <div className="flex flex-wrap gap-1.5 text-xs font-bold">
-                  {(["all", "normal", "warning", "critical", "offline"] as const).map((st) => (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => setCentreStatusFilter(st)}
-                      className={cn(
-                        "rounded-lg px-3 py-1.5 capitalize transition-all",
-                        centreStatusFilter === st
-                          ? "bg-cyan-signal text-command font-extrabold"
-                          : "bg-command-panel text-command-muted hover:text-command-fg"
-                      )}
-                    >
-                      {st === "all" ? "All Centres" : st}
-                    </button>
-                  ))}
-                </div>
+        {activeSection === "benchmarking" && (
+          <div className="mt-6 space-y-6">
+            <div className="surface-lift p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <SectionLabel tone="light">{hi ? "मंडी बेंचमार्किंग एवं लक्ष्य ट्रैकिंग" : "State Mandi Benchmarking & Performance"}</SectionLabel>
+                <h2 className="mt-1 font-display text-xl font-extrabold text-navy">
+                  Procurement Targets vs Actual Progress
+                </h2>
               </div>
-
-              {/* Interactive Vector Grid Map */}
-              <div className="relative overflow-hidden rounded-2xl border border-command-line bg-command/90 p-4">
-                <div className="absolute inset-0 grid-lines opacity-30 pointer-events-none" />
-                <svg viewBox="0 0 100 90" className="relative w-full h-[420px]" role="img" aria-label="State Procurement Centre Radar">
-                  <path
-                    d="M10 15 L45 8 L82 16 L94 45 L86 78 L50 88 L16 80 L8 45 Z"
-                    fill="color-mix(in oklab, var(--cyan-signal) 4%, transparent)"
-                    stroke="color-mix(in oklab, var(--cyan-signal) 35%, transparent)"
-                    strokeWidth="0.6"
-                    strokeDasharray="2 2"
-                  />
-
-                  {/* Connect centres with radar mesh */}
-                  {filteredCentres.map((c) =>
-                    filteredCentres
-                      .filter((o) => o.id !== c.id)
-                      .slice(0, 1)
-                      .map((o) => (
-                        <line
-                          key={`${c.id}-${o.id}`}
-                          x1={c.map.x}
-                          y1={c.map.y}
-                          x2={o.map.x}
-                          y2={o.map.y}
-                          stroke="color-mix(in oklab, var(--command-line) 80%, transparent)"
-                          strokeWidth="0.4"
-                        />
-                      ))
-                  )}
-
-                  {/* Centre Nodes */}
-                  {filteredCentres.map((c) => {
-                    const health = centreHealth(c.capacityUsedPct);
-                    const isSelected = selectedCentre?.id === c.id;
-                    const fill = health === "red" ? "var(--danger)" : health === "yellow" ? "var(--saffron)" : "var(--leaf)";
-
-                    return (
-                      <g
-                        key={c.id}
-                        onClick={() => setSelectedCentre(c)}
-                        className="cursor-pointer group"
-                        role="button"
-                        tabIndex={0}
-                      >
-                        {/* Glow halo */}
-                        <circle cx={c.map.x} cy={c.map.y} r={isSelected ? 8 : 6} fill={fill} opacity="0.18" />
-                        <circle
-                          cx={c.map.x}
-                          cy={c.map.y}
-                          r={health === "red" ? 4.8 : 3.8}
-                          fill={fill}
-                          opacity={health === "red" ? 0.38 : 0.22}
-                          className={health === "red" ? "animate-blip" : undefined}
-                        />
-                        <circle cx={c.map.x} cy={c.map.y} r="2.2" fill={fill} stroke="var(--command)" strokeWidth="0.6" />
-
-                        {/* Centre Label */}
-                        <text
-                          x={c.map.x}
-                          y={c.map.y - 6}
-                          textAnchor="middle"
-                          fontSize="3.2"
-                          fontWeight="800"
-                          fill={isSelected ? "var(--cyan-signal)" : "var(--command-fg)"}
-                        >
-                          {c.code} · {c.capacityUsedPct}%
-                        </text>
-                        <text x={c.map.x} y={c.map.y + 7} textAnchor="middle" fontSize="2.4" fill="var(--command-muted)">
-                          Q: {c.queueLength} | {c.predictedWaitMin}m
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              </div>
-
-              {/* Centre Quick Selector Chips */}
-              <div className="flex flex-wrap gap-2 pt-2">
-                {centres.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setSelectedCentre(c)}
-                    className={cn(
-                      "flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition-all",
-                      selectedCentre?.id === c.id
-                        ? "border-cyan-signal bg-cyan-signal/20 text-cyan-signal"
-                        : "border-command-line bg-command-panel text-command-muted hover:text-command-fg"
-                    )}
-                  >
-                    <span className="size-2 rounded-full" style={{ backgroundColor: centreHealth(c.capacityUsedPct) === "red" ? "var(--danger)" : centreHealth(c.capacityUsedPct) === "yellow" ? "var(--saffron)" : "var(--leaf)" }} />
-                    <span>{c.name}</span>
-                    <span className="text-[10px] opacity-70">({c.capacityUsedPct}%)</span>
-                  </button>
-                ))}
-              </div>
+              <span className="rounded-full bg-navy-soft px-3 py-1 text-xs font-bold text-navy border border-navy/20">
+                Ranked by Operational Velocity
+              </span>
             </div>
 
-            {/* Right: Centre Drilldown Drawer */}
-            <div className="panel-command p-5 space-y-5">
-              {selectedCentre ? (
-                <>
-                  <div className="flex items-start justify-between border-b border-command-line pb-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="flex size-7 items-center justify-center rounded-lg bg-cyan-signal font-display text-xs font-bold text-command">
-                          {selectedCentre.code}
-                        </span>
-                        <h3 className="font-display text-lg font-extrabold text-command-fg">{selectedCentre.name}</h3>
-                      </div>
-                      <p className="mt-1 text-xs text-command-muted">{selectedCentre.nameHi}</p>
-                    </div>
-                    <HealthDot health={centreHealth(selectedCentre.capacityUsedPct)} />
-                  </div>
-
-                  {/* Core Metrics Grid */}
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="rounded-xl border border-command-line bg-command-panel p-3">
-                      <span className="text-command-muted uppercase text-[10px] font-bold">Live Queue</span>
-                      <p className="text-xl font-extrabold text-command-fg mt-0.5">{selectedCentre.queueLength} Farmers</p>
-                    </div>
-                    <div className="rounded-xl border border-command-line bg-command-panel p-3">
-                      <span className="text-command-muted uppercase text-[10px] font-bold">Wait Time</span>
-                      <p className="text-xl font-extrabold text-cyan-signal mt-0.5">{selectedCentre.predictedWaitMin} Minutes</p>
-                    </div>
-                    <div className="rounded-xl border border-command-line bg-command-panel p-3">
-                      <span className="text-command-muted uppercase text-[10px] font-bold">Operational Counters</span>
-                      <p className="text-xl font-extrabold text-command-fg mt-0.5">{selectedCentre.activeCounters} / {selectedCentre.totalCounters}</p>
-                    </div>
-                    <div className="rounded-xl border border-command-line bg-command-panel p-3">
-                      <span className="text-command-muted uppercase text-[10px] font-bold">Throughput Rate</span>
-                      <p className="text-xl font-extrabold text-leaf mt-0.5">{selectedCentre.processingRatePerHour} / hr</p>
-                    </div>
-                  </div>
-
-                  {/* Procurement Progress Bar */}
-                  <div>
-                    <div className="mb-2 flex items-center justify-between text-xs font-semibold text-command-muted">
-                      <span>Capacity Utilization</span>
-                      <span className="font-bold text-command-fg">{selectedCentre.capacityUsedPct}%</span>
-                    </div>
-                    <CapacityBar pct={selectedCentre.capacityUsedPct} tone="dark" />
-                    <p className="mt-2 text-xs text-command-muted">
-                      {selectedCentre.procuredTodayQuintals.toLocaleString("en-IN")} quintals weighed today of {selectedCentre.dailyCapacityQuintals.toLocaleString("en-IN")} capacity limit.
-                    </p>
-                  </div>
-
-                  {/* Grievances at this Centre */}
-                  <div className="rounded-xl border border-command-line bg-command-panel p-4 space-y-2.5">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-saffron">
-                      Centre Grievances ({grievances.filter((g) => g.centreId === selectedCentre.id && g.status !== "resolved").length} active)
-                    </p>
-                    {grievances.filter((g) => g.centreId === selectedCentre.id && g.status !== "resolved").length > 0 ? (
-                      grievances
-                        .filter((g) => g.centreId === selectedCentre.id && g.status !== "resolved")
-                        .slice(0, 2)
-                        .map((g) => (
-                          <div key={g.id} className="rounded-lg bg-command p-2.5 text-xs">
-                            <span className="font-bold text-command-fg">{g.subject}</span>
-                            <p className="text-command-muted text-[11px] line-clamp-1 mt-0.5">{g.description}</p>
-                          </div>
-                        ))
-                    ) : (
-                      <p className="text-xs text-leaf font-semibold">✓ No active complaints reported at this centre.</p>
-                    )}
-                  </div>
-
-                  {/* Executive Actions */}
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveSection("grievances");
-                        setGrievanceFilter("all");
-                      }}
-                      className="flex-1 rounded-xl bg-command-line py-2.5 text-xs font-bold text-command-fg hover:bg-command-panel focus-ring"
-                    >
-                      Inspect Complaints
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => alert(`Direct broadcast sent to Superintendent at ${selectedCentre.name}`)}
-                      className="flex-1 rounded-xl bg-cyan-signal text-command py-2.5 text-xs font-extrabold hover:bg-cyan-signal/90 focus-ring"
-                    >
-                      Dispatch Directive
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-20 text-center text-command-muted space-y-3">
-                  <span className="text-3xl">🛰️</span>
-                  <p className="text-sm font-semibold text-command-fg">Select any procurement centre on the radar to inspect real-time metrics, capacity and grievances.</p>
-                </div>
-              )}
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-foreground">
+                  <thead className="border-b border-border bg-muted/60 uppercase font-bold text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-3.5">Rank</th>
+                      <th className="px-4 py-3.5">Centre & Code</th>
+                      <th className="px-4 py-3.5">Target Progress (Qtl)</th>
+                      <th className="px-4 py-3.5">Throughput Rate</th>
+                      <th className="px-4 py-3.5">Average Wait</th>
+                      <th className="px-4 py-3.5">Active Scales</th>
+                      <th className="px-4 py-3.5 text-right">Status Tier</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border font-medium">
+                    {benchmarkedCentres.map((c, idx) => {
+                      const pct = Math.round((c.procuredTodayQuintals / Math.max(1, c.dailyCapacityQuintals)) * 100);
+                      return (
+                        <tr key={c.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-4 py-3.5 font-display font-black text-navy text-sm">
+                            #{idx + 1}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="font-bold text-navy text-sm">{c.name}</div>
+                            <div className="text-[10px] text-muted-foreground">{c.code} · {c.district}</div>
+                          </td>
+                          <td className="px-4 py-3.5 min-w-44">
+                            <div className="flex justify-between text-[11px] mb-1">
+                              <span className="font-bold text-navy">{c.procuredTodayQuintals.toLocaleString("en-IN")} qtl</span>
+                              <span className="text-muted-foreground">{pct}% of {c.dailyCapacityQuintals.toLocaleString("en-IN")}</span>
+                            </div>
+                            <CapacityBar pct={pct} tone="light" />
+                          </td>
+                          <td className="px-4 py-3.5 font-bold text-navy">
+                            {c.processingRatePerHour} farmers/hr
+                          </td>
+                          <td className="px-4 py-3.5 font-bold text-navy">
+                            {c.predictedWaitMin} mins
+                          </td>
+                          <td className="px-4 py-3.5 text-muted-foreground">
+                            {c.activeCounters} / {c.totalCounters} operational
+                          </td>
+                          <td className="px-4 py-3.5 text-right">
+                            <Pill tone={c.capacityUsedPct >= 85 ? "danger" : c.capacityUsedPct >= 65 ? "saffron" : "leaf"}>
+                              {c.capacityUsedPct >= 85 ? "Strained" : c.capacityUsedPct >= 65 ? "Moderate" : "Top Performer"}
+                            </Pill>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 3: GOVERNMENT GRIEVANCE & COMPLAINT REDRESSAL DESK
+            TAB 3: GRIEVANCE REDRESSAL DESK
         ══════════════════════════════════════════════════════════════ */}
         {activeSection === "grievances" && (
           <div className="mt-6 space-y-6">
-            {/* Triage & Filter Header */}
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between panel-command p-5">
+            <div className="surface-lift p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <SectionLabel tone="dark">{hi ? "केंद्रीकृत शिकायत निवारण प्रणाली" : "Centralized Grievance Redressal Mechanism"}</SectionLabel>
-                <h2 className="mt-1 font-display text-xl font-extrabold text-command-fg">
-                  Farmer Complaints & Field Inquiries ({filteredGrievances.length})
+                <SectionLabel tone="light">{hi ? "राज्य किसान शिकायत निवारण" : "State Grievance Redressal Cell"}</SectionLabel>
+                <h2 className="mt-1 font-display text-xl font-extrabold text-navy">
+                  Escalation Queue & Statutory Redressal Orders
                 </h2>
               </div>
-
-              {/* Status Filter Tabs */}
-              <div className="flex flex-wrap gap-2 text-xs font-bold">
-                {(["all", "new", "pending", "escalated", "critical", "resolved"] as const).map((st) => (
+              <div className="flex flex-wrap gap-2">
+                {["all", "new", "pending", "escalated", "resolved"].map((st) => (
                   <button
                     key={st}
                     type="button"
-                    onClick={() => {
-                      if (st === "critical") {
-                        setGrievancePriorityFilter("critical");
-                        setGrievanceFilter("all");
-                      } else {
-                        setGrievancePriorityFilter("all");
-                        setGrievanceFilter(st);
-                      }
-                    }}
+                    onClick={() => setGrievanceFilter(st)}
                     className={cn(
-                      "rounded-xl px-3.5 py-2 uppercase transition-all",
-                      (st === "critical" && grievancePriorityFilter === "critical") || (st !== "critical" && grievanceFilter === st && grievancePriorityFilter === "all")
-                        ? "bg-cyan-signal text-command font-extrabold"
-                        : "bg-command-panel text-command-muted hover:text-command-fg"
+                      "rounded-lg px-3 py-1.5 text-xs font-bold transition-colors focus-ring capitalize",
+                      grievanceFilter === st
+                        ? "bg-navy text-primary-foreground font-extrabold shadow-2xs"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-navy"
                     )}
                   >
                     {st}
@@ -843,156 +527,129 @@ export function SuperAdminCommandPlatform() {
             </div>
 
             {/* Grievances List */}
-            <div className="grid gap-4">
-              {filteredGrievances.length > 0 ? (
+            <div className="grid gap-3">
+              {filteredGrievances.length === 0 ? (
+                <div className="surface-lift p-12 text-center text-xs font-semibold text-muted-foreground">
+                  No grievances matching this filter.
+                </div>
+              ) : (
                 filteredGrievances.map((g) => {
                   const pStyle = priorityStyles[g.priority] || priorityStyles.medium;
-                  const sStyle = statusStyles[g.status] || statusStyles.new;
-
                   return (
-                    <article
-                      key={g.id}
-                      className={cn(
-                        "panel-command p-5 space-y-4 border-l-4 transition-all hover:bg-command-panel/40",
-                        g.priority === "critical" ? "border-l-danger" : g.priority === "high" ? "border-l-saffron" : "border-l-cyan-signal"
-                      )}
-                    >
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div key={g.id} className="surface-lift p-5 space-y-3 border-l-4 border-l-navy">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-lg">{grievanceCategoryIcons[g.category] || "📋"}</span>
-                            <h3 className="font-display text-base font-extrabold text-command-fg">{g.subject}</h3>
-                            <span className={cn("rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase", pStyle.badge)}>
-                              {pStyle.label}
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-display text-sm font-extrabold text-navy">{g.subject}</h3>
+                            <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase", pStyle.badge)}>
+                              {g.priority}
                             </span>
-                            <Pill tone={sStyle.tone}>{sStyle.label}</Pill>
+                            <Pill tone={g.status === "resolved" ? "leaf" : g.status === "escalated" ? "danger" : "saffron"}>
+                              {g.status.toUpperCase()}
+                            </Pill>
                           </div>
-                          <p className="mt-1 text-xs text-command-muted">
-                            Filed by <strong>{g.farmerName}</strong> ({g.farmerPhone || "Registered Contact"}) · Centre: <strong>{g.centreName || "District Centre"}</strong> · Region: {g.district}
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Farmer: <strong className="text-navy">{g.farmerName}</strong> ({g.farmerPhone || "—"}) · Mandi: {g.centreName || "State Network"}
                           </p>
                         </div>
-                        <span className="font-mono text-xs text-command-muted">
-                          {new Date(g.createdAt).toLocaleDateString("en-IN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
-
-                      <p className="rounded-xl bg-command-panel/80 p-3 text-xs text-command-fg leading-relaxed">
-                        {g.description}
-                      </p>
-
-                      {g.resolutionNotes && (
-                        <div className="rounded-xl border border-leaf/40 bg-leaf/10 p-3 text-xs text-leaf">
-                          <strong>Official Resolution Findings:</strong> {g.resolutionNotes}
-                          {g.resolvedAt && <span className="block text-[10px] text-leaf/70 mt-1">Resolved on {new Date(g.resolvedAt).toLocaleString("en-IN")}</span>}
-                        </div>
-                      )}
-
-                      {/* Official Action Controls */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-command-line pt-3">
-                        <div className="text-xs text-command-muted">
-                          Assigned Officer: <strong className="text-command-fg">{g.assignedToName || "Unassigned (Desk Pool)"}</strong>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex gap-2">
                           {g.status !== "resolved" ? (
                             <>
                               <button
                                 type="button"
-                                onClick={() => setSelectedGrievance(g)}
-                                className="rounded-xl border border-command-line bg-command-panel px-3 py-1.5 text-xs font-bold text-command-fg hover:bg-command-line focus-ring"
-                              >
-                                👤 Reassign Officer
-                              </button>
-                              <button
-                                type="button"
                                 onClick={() => handleEscalateGrievance(g.id)}
-                                className="rounded-xl bg-danger/20 border border-danger/40 px-3 py-1.5 text-xs font-bold text-danger hover:bg-danger/30 focus-ring"
+                                className="rounded-xl border border-danger/40 bg-danger-soft px-3 py-1.5 text-xs font-bold text-danger hover:bg-danger/20 transition-colors"
                               >
-                                ⚠️ Escalate to State Board
+                                ⚠️ Escalate
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setSelectedGrievance(g)}
-                                className="rounded-xl bg-gradient-leaf px-3.5 py-1.5 text-xs font-bold text-primary-foreground hover:scale-105 transition-transform focus-ring"
+                                className="rounded-xl bg-gradient-leaf px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:scale-105 transition-transform"
                               >
-                                ✓ Resolve with Order
+                                ✓ Resolve
                               </button>
                             </>
                           ) : (
                             <button
                               type="button"
                               onClick={() => handleReopenGrievance(g.id)}
-                              className="rounded-xl border border-command-line bg-command-panel px-3 py-1.5 text-xs font-bold text-saffron hover:bg-command-line focus-ring"
+                              className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-saffron hover:bg-muted transition-colors"
                             >
-                              ↺ Reopen Appeal
+                              ↺ Reopen
                             </button>
                           )}
                         </div>
                       </div>
-                    </article>
+
+                      <p className="rounded-xl bg-muted/40 p-3 text-xs text-foreground/90 leading-relaxed font-mono border border-border/40">
+                        {g.description}
+                      </p>
+
+                      {g.resolutionNotes && (
+                        <div className="rounded-xl border border-leaf/40 bg-leaf-soft p-3 text-xs text-navy">
+                          <strong className="text-leaf">Official Order / Findings:</strong> {g.resolutionNotes}
+                        </div>
+                      )}
+                    </div>
                   );
                 })
-              ) : (
-                <div className="panel-command p-12 text-center text-xs font-semibold text-command-muted">
-                  No grievances found matching this category. All systems operating within SLA.
-                </div>
               )}
             </div>
 
-            {/* Grievance Action Modal */}
+            {/* Resolution Modal */}
             {selectedGrievance && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-                <div className="panel-command w-full max-w-xl p-6 space-y-4 border border-command-line shadow-2xl">
-                  <div className="flex items-start justify-between border-b border-command-line pb-3">
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fade-in">
+                <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 space-y-4 shadow-2xl">
+                  <div className="flex items-start justify-between border-b border-border pb-3">
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-cyan-signal">Official Grievance Action</p>
-                      <h3 className="text-lg font-extrabold text-command-fg">{selectedGrievance.subject}</h3>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-leaf">Official Grievance Action</p>
+                      <h3 className="text-lg font-extrabold text-navy">{selectedGrievance.subject}</h3>
                     </div>
-                    <button type="button" onClick={() => setSelectedGrievance(null)} className="text-command-muted hover:text-command-fg">
+                    <button type="button" onClick={() => setSelectedGrievance(null)} className="text-muted-foreground hover:text-navy">
                       ✕
                     </button>
                   </div>
 
                   <div className="space-y-3">
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-[0.1em] text-command-muted">
+                      <label className="block text-xs font-bold uppercase tracking-[0.1em] text-muted-foreground">
                         Assign Official Authority
                       </label>
                       <select
                         value={assigneeInput}
                         onChange={(e) => setAssigneeInput(e.target.value)}
-                        className="mt-1.5 h-11 w-full rounded-xl border border-command-line bg-command px-3 text-xs font-semibold text-command-fg focus-ring"
+                        className="mt-1.5 h-11 w-full rounded-xl border border-border bg-background px-3 text-xs font-semibold text-foreground focus-ring"
                       >
                         <option value="District Food & Supplies Controller">District Food & Supplies Controller (DFSC)</option>
                         <option value="Centre Superintendent / Weighbridge In-Charge">Centre Superintendent / Weighbridge In-Charge</option>
                         <option value="Assistant Food Supply Officer">Assistant Food Supply Officer (AFSO)</option>
                         <option value="District Vigilance & Redressal Cell">District Vigilance & Redressal Cell</option>
-                        <option value="State Directorate Technical Team">State Directorate Technical Team</option>
                       </select>
                       <button
                         type="button"
                         onClick={() => handleAssignGrievance(selectedGrievance.id)}
-                        className="mt-2 w-full rounded-xl bg-command-line py-2 text-xs font-bold text-command-fg hover:bg-command-panel focus-ring"
+                        className="mt-2 w-full rounded-xl bg-navy-soft py-2 text-xs font-bold text-navy hover:bg-muted focus-ring transition-colors"
                       >
                         Save Assignment
                       </button>
                     </div>
 
-                    <div className="border-t border-command-line pt-3">
+                    <div className="border-t border-border pt-3">
                       <label className="block text-xs font-bold uppercase tracking-[0.1em] text-leaf">
-                        Or Resolve Case with Official Action Taken
+                        Resolve Case with Formal Findings & Action Taken
                       </label>
                       <textarea
                         rows={3}
                         value={resolutionInput}
                         onChange={(e) => setResolutionInput(e.target.value)}
-                        placeholder="Enter formal findings, lab test verification, weighbridge recalibration record or DBT credit reference..."
-                        className="mt-1.5 w-full rounded-xl border border-command-line bg-command p-3 text-xs font-semibold text-command-fg focus-ring"
+                        placeholder="Enter official resolution details, scale calibration log or DBT reference..."
+                        className="mt-1.5 w-full rounded-xl border border-border bg-background p-3 text-xs font-semibold text-foreground focus-ring"
                       />
                       <button
                         type="button"
                         onClick={() => handleResolveGrievance(selectedGrievance.id)}
-                        className="mt-2 w-full rounded-xl bg-gradient-leaf py-3 text-xs font-bold text-primary-foreground hover:scale-[1.01] transition-transform focus-ring"
+                        className="mt-2 w-full rounded-xl bg-gradient-leaf py-3 text-xs font-bold text-white shadow-sm hover:scale-[1.01] transition-transform focus-ring"
                       >
                         ✓ Issue Official Resolution Order
                       </button>
@@ -1005,126 +662,94 @@ export function SuperAdminCommandPlatform() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 4: AI & POLICY INTELLIGENCE DESK
+            TAB 4: AI POLICY SENTINEL & LIVE ANOMALIES
         ══════════════════════════════════════════════════════════════ */}
         {activeSection === "intelligence" && (
           <div className="mt-6 space-y-6">
-            <div className="panel-command p-5">
-              <SectionLabel tone="dark">{hi ? "पूर्वानुमान एवं नीतिगत बुद्धिमत्ता" : "State AI & Policy Intelligence Sentinel"}</SectionLabel>
-              <h2 className="mt-1 font-display text-xl font-extrabold text-command-fg">
-                Predictive Congestion Models & Operational Directives
+            <div className="surface-lift p-5">
+              <SectionLabel tone="light">{hi ? "एआई विसंगति जांच एवं नीतिगत सलाह" : "Predictive Intelligence Sentinel & Anomaly Engine"}</SectionLabel>
+              <h2 className="mt-1 font-display text-xl font-extrabold text-navy">
+                Automated Operational Anomaly Detections & Trajectories
               </h2>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="panel-command p-5 space-y-3 border-l-4 border-l-danger">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase text-danger">Anomaly Detected</span>
-                  <span className="text-xs font-mono text-command-muted">Live Analysis</span>
+              {liveAnomalies.length === 0 ? (
+                <div className="surface-lift col-span-2 p-8 text-center text-xs text-muted-foreground">
+                  ✓ No critical anomalies detected. All centres running within safe bands.
                 </div>
-                <h3 className="font-display text-base font-extrabold text-command-fg">
-                  3 Procurement Centres Projected to Breach 85% Safe Band
-                </h3>
-                <p className="text-xs text-command-muted leading-relaxed">
-                  Morning tractor arrival velocity indicates that Centre A and Centre B will reach maximum yard capacity by 12:45 PM unless 20% of afternoon slot appointments are re-routed.
-                </p>
-                <div className="rounded-xl bg-command-panel p-3 text-xs text-cyan-signal font-semibold">
-                  Recommended Action: Enable dynamic slot rebalancing and notify 24 farmers via automated SMS/voice prompt.
-                </div>
-              </div>
-
-              <div className="panel-command p-5 space-y-3 border-l-4 border-l-saffron">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase text-saffron">Throughput Intelligence</span>
-                  <span className="text-xs font-mono text-command-muted">Weighbridge SLA</span>
-                </div>
-                <h3 className="font-display text-base font-extrabold text-command-fg">
-                  Average Processing Delay Elevated by 18% in Western Belt
-                </h3>
-                <p className="text-xs text-command-muted leading-relaxed">
-                  Electronic weighbridge cycle times increased from 7.2 minutes to 9.8 minutes per truck due to moisture inspection contention at Counter #3.
-                </p>
-                <div className="rounded-xl bg-command-panel p-3 text-xs text-leaf font-semibold">
-                  Recommended Action: Direct District Admin to activate secondary portable moisture testing kit.
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════
-            TAB 5: DISTRICT PERFORMANCE SCORECARDS
-        ══════════════════════════════════════════════════════════════ */}
-        {activeSection === "districts" && (
-          <div className="mt-6 space-y-6">
-            <div className="panel-command p-5">
-              <SectionLabel tone="dark">{hi ? "जिलावार प्रदर्शन रिपोर्ट" : "Inter-District Procurement Performance Scorecards"}</SectionLabel>
-              <h2 className="mt-1 font-display text-xl font-extrabold text-command-fg">
-                Operational Efficiency & Compliance Rankings
-              </h2>
+              ) : (
+                liveAnomalies.map((anom) => (
+                  <div
+                    key={anom.id}
+                    className={cn(
+                      "surface-lift p-5 space-y-3 border-l-4",
+                      anom.severity === "critical" ? "border-l-danger" : "border-l-saffron"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs uppercase font-bold text-muted-foreground">{anom.centreName}</span>
+                      <Pill tone={anom.severity === "critical" ? "danger" : "saffron"}>
+                        {anom.type.replace("_", " ").toUpperCase()}
+                      </Pill>
+                    </div>
+                    <p className="font-display text-sm font-bold text-navy">{anom.description}</p>
+                    <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t border-border">
+                      <span>Current: <strong className="text-navy">{anom.currentValue}</strong></span>
+                      <span>Target Baseline: <strong className="text-navy">{anom.expectedValue}</strong></span>
+                      <span className="text-danger font-bold">+{anom.deviationPct}% Deviation</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-command-line bg-command-panel">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-command-fg">
-                  <thead className="border-b border-command-line bg-command uppercase font-bold text-command-muted">
-                    <tr>
-                      <th className="px-4 py-3.5">District / Division</th>
-                      <th className="px-4 py-3.5">Centres</th>
-                      <th className="px-4 py-3.5">Farmers Served</th>
-                      <th className="px-4 py-3.5">Procured (qtl)</th>
-                      <th className="px-4 py-3.5">Avg Wait Time</th>
-                      <th className="px-4 py-3.5">Grievances</th>
-                      <th className="px-4 py-3.5 text-right">Health Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-command-line font-medium">
-                    {districtScorecards.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-command/40 transition-colors">
-                        <td className="px-4 py-4 font-bold text-command-fg text-sm">{row.district}</td>
-                        <td className="px-4 py-4">{row.centresCount || centres.length} Active</td>
-                        <td className="px-4 py-4">{row.farmersServed} Registered</td>
-                        <td className="px-4 py-4 font-bold text-leaf">{row.procuredQtl.toLocaleString("en-IN")} qtl</td>
-                        <td className="px-4 py-4">
-                          <span className={cn("font-bold", stateAverageWaitMin > 60 ? "text-danger" : "text-cyan-signal")}>
-                            {stateAverageWaitMin} min
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={row.openComplaints > 0 ? "text-saffron font-bold" : "text-leaf font-bold"}>
-                            {row.openComplaints} Open / {row.resolvedComplaints} Resolved
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <Pill tone={criticalCentresCount > 0 ? "danger" : "leaf"}>
-                            {criticalCentresCount > 0 ? "Strained" : "Optimal Band"}
-                          </Pill>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Congestion Predictions */}
+            <div className="surface-lift p-5 space-y-3">
+              <h3 className="font-display text-base font-bold text-navy">
+                Predicted Yard Saturation & Time-to-Breach Trajectory
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {livePredictions.map((pred) => (
+                  <div key={pred.centreId} className="rounded-xl border border-border bg-card p-4 space-y-2 shadow-2xs">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-navy text-sm">{pred.centreName}</span>
+                      <span className="font-mono text-xs text-leaf font-bold">{pred.confidence}% Conf.</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Projected: <strong className="text-navy">{pred.predictedCapacityPct}%</strong></span>
+                      {pred.predictedBreachTime && (
+                        <span className="text-danger font-bold">Breach ~{pred.predictedBreachTime}</span>
+                      )}
+                    </div>
+                    {pred.recommendation && (
+                      <p className="text-[11px] text-navy border-t border-border pt-2 bg-leaf-soft/40 -mx-4 -mb-4 p-3 rounded-b-xl">
+                        💡 {pred.recommendation}
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 6: DBT PAYMENT MONITORING
+            TAB 5: DBT PAYMENT SLA AUDIT
         ══════════════════════════════════════════════════════════════ */}
         {activeSection === "payments" && (
           <div className="mt-6 space-y-6">
-            <div className="panel-command p-5">
-              <SectionLabel tone="dark">{hi ? "डीबीटी वित्तीय भुगतान ऑडिट" : "Direct Benefit Transfer (DBT) Payout Audit"}</SectionLabel>
-              <h2 className="mt-1 font-display text-xl font-extrabold text-command-fg">
-                Central Bank Payout Pipeline & 48h SLA Tracking
+            <div className="surface-lift p-5">
+              <SectionLabel tone="light">{hi ? "डीबीटी वित्तीय भुगतान ऑडिट" : "Direct Benefit Transfer (DBT) Payout Audit"}</SectionLabel>
+              <h2 className="mt-1 font-display text-xl font-extrabold text-navy">
+                Treasury Bank Payout Pipeline & 48h SLA Tracking
               </h2>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-command-line bg-command-panel">
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-command-fg">
-                  <thead className="border-b border-command-line bg-command uppercase font-bold text-command-muted">
+                <table className="w-full text-left text-xs text-foreground">
+                  <thead className="border-b border-border bg-muted/60 uppercase font-bold text-muted-foreground">
                     <tr>
                       <th className="px-4 py-3.5">Farmer & Account</th>
                       <th className="px-4 py-3.5">Quantity / Rate</th>
@@ -1134,17 +759,17 @@ export function SuperAdminCommandPlatform() {
                       <th className="px-4 py-3.5 text-right">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-command-line font-medium">
+                  <tbody className="divide-y divide-border font-medium">
                     {paymentsList.map((p) => (
-                      <tr key={p.id} className="hover:bg-command/40 transition-colors">
+                      <tr key={p.id} className="hover:bg-muted/30 transition-colors">
                         <td className="px-4 py-3.5">
-                          <div className="font-bold text-command-fg">{p.bank_masked || "PNB ••••4417"}</div>
-                          <div className="text-[10px] text-command-muted">Ticket #{p.ticket_id ? p.ticket_id.slice(0, 8) : "DIRECT"}</div>
+                          <div className="font-bold text-navy">{p.bank_masked || "NPCI Seeded Bank"}</div>
+                          <div className="text-[10px] text-muted-foreground">Ticket #{p.ticket_id ? p.ticket_id.slice(0, 8) : "DIRECT"}</div>
                         </td>
-                        <td className="px-4 py-3.5">{p.quintals} qtl @ ₹{p.rate_per_quintal}/qtl</td>
+                        <td className="px-4 py-3.5 text-foreground">{p.quintals} qtl @ ₹{p.rate_per_quintal}/qtl</td>
                         <td className="px-4 py-3.5 font-bold text-leaf text-sm">₹{Number(p.gross_amount).toLocaleString("en-IN")}</td>
-                        <td className="px-4 py-3.5 capitalize text-cyan-signal font-semibold">{p.stage.replace("_", " ")}</td>
-                        <td className="px-4 py-3.5 text-command-muted">{p.expected_credit_in || "Within 48 hours"}</td>
+                        <td className="px-4 py-3.5 capitalize text-navy font-semibold">{p.stage.replace("_", " ")}</td>
+                        <td className="px-4 py-3.5 text-muted-foreground">{p.expected_credit_in || "Within 48 hours"}</td>
                         <td className="px-4 py-3.5 text-right">
                           <Pill tone="leaf">Verified ✓</Pill>
                         </td>
@@ -1158,112 +783,199 @@ export function SuperAdminCommandPlatform() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 7: CENTRAL ALERT & ESCALATION INBOX
+            TAB 6: POLICY & MSP CONFIGURATION
         ══════════════════════════════════════════════════════════════ */}
-        {activeSection === "alerts" && (
-          <div className="mt-6 space-y-4">
-            <div className="panel-command p-5">
-              <SectionLabel tone="dark">{hi ? "अलर्ट एवं आपातकालीन चेतावनी" : "State Alert & Escalation Inbox"}</SectionLabel>
-              <h2 className="mt-1 font-display text-xl font-extrabold text-command-fg">
-                Active Critical & Operational Notifications
+        {activeSection === "policy" && (
+          <div className="mt-6 space-y-6">
+            <div className="surface-lift p-5">
+              <SectionLabel tone="light">{hi ? "न्यूनतम समर्थन मूल्य (MSP) नीति" : "Procurement Policy & Statutory Standards"}</SectionLabel>
+              <h2 className="mt-1 font-display text-xl font-extrabold text-navy">
+                Rabi Marketing Season 2026-27 Official MSP Rates
               </h2>
             </div>
 
-            <div className="grid gap-3">
-              {liveAlerts.map((alt) => (
-                <div
-                  key={alt.id}
-                  className={cn(
-                    "panel-command p-4 flex items-start justify-between gap-4 border-l-4",
-                    alt.severity === "critical" ? "border-l-danger" : alt.severity === "warning" ? "border-l-saffron" : "border-l-cyan-signal"
-                  )}
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-command-fg">{alt.title}</span>
-                      <Pill tone={alt.severity === "critical" ? "danger" : alt.severity === "warning" ? "saffron" : "navy"}>
-                        {alt.severity.toUpperCase()}
-                      </Pill>
-                    </div>
-                    <p className="mt-1 text-xs text-command-muted">{alt.detail}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSuccessBanner(`Alert acknowledged by Directorate.`)}
-                    className="rounded-xl border border-command-line bg-command-panel px-3 py-1.5 text-xs font-bold text-command-fg hover:bg-command-line"
-                  >
-                    Acknowledge
-                  </button>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { crop: "Wheat (गेहूँ)", rate: "₹2,430", unit: "per quintal", tolerance: "≤ 12.0% moisture" },
+                { crop: "Paddy Common (धान)", rate: "₹2,300", unit: "per quintal", tolerance: "≤ 14.0% moisture" },
+                { crop: "Mustard Seed (सरसों)", rate: "₹5,650", unit: "per quintal", tolerance: "≤ 8.0% moisture" },
+                { crop: "Gram (चना)", rate: "₹5,440", unit: "per quintal", tolerance: "≤ 10.0% moisture" },
+              ].map((item) => (
+                <div key={item.crop} className="surface-lift p-5 space-y-2 border-t-4 border-t-leaf">
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground">{item.crop}</span>
+                  <p className="font-display text-2xl font-black text-leaf">{item.rate}</p>
+                  <p className="text-xs text-muted-foreground">{item.unit}</p>
+                  <span className="rounded-full bg-leaf-soft px-2.5 py-0.5 text-[9px] font-bold text-navy border border-leaf/30">
+                    {item.tolerance}
+                  </span>
                 </div>
               ))}
             </div>
-          </div>
-        )}
 
-        {/* ══════════════════════════════════════════════════════════════
-            TAB 8: GOVERNANCE & IMMUTABLE AUDIT TRAIL
-        ══════════════════════════════════════════════════════════════ */}
-        {activeSection === "governance" && (
-          <div className="mt-6 space-y-4">
-            <div className="panel-command p-5">
-              <SectionLabel tone="dark">{hi ? "गवर्नेंस एवं ऑडिट लॉग" : "Governance Audit Trail & Action History"}</SectionLabel>
-              <h2 className="mt-1 font-display text-xl font-extrabold text-command-fg">
-                Immutable System Activity Logs
-              </h2>
-            </div>
-
-            <div className="overflow-hidden rounded-2xl border border-command-line bg-command-panel">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-command-fg">
-                  <thead className="border-b border-command-line bg-command uppercase font-bold text-command-muted">
-                    <tr>
-                      <th className="px-4 py-3.5">Action</th>
-                      <th className="px-4 py-3.5">Actor Role</th>
-                      <th className="px-4 py-3.5">Target</th>
-                      <th className="px-4 py-3.5">Metadata</th>
-                      <th className="px-4 py-3.5 text-right">Timestamp</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-command-line font-medium font-mono text-[11px]">
-                    {auditLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-command/40 transition-colors">
-                        <td className="px-4 py-3 font-bold text-cyan-signal">{log.action}</td>
-                        <td className="px-4 py-3 uppercase text-command-muted">{log.actorRole || "SYSTEM"}</td>
-                        <td className="px-4 py-3">{log.targetType ? `${log.targetType} (${log.targetId?.slice(0, 8) || "—"})` : "—"}</td>
-                        <td className="px-4 py-3 text-command-muted max-w-xs truncate">{JSON.stringify(log.metadata)}</td>
-                        <td className="px-4 py-3 text-right text-command-muted">
-                          {new Date(log.createdAt).toLocaleDateString("en-IN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Operating Guidelines */}
+            <div className="surface-lift p-5 space-y-3">
+              <h3 className="font-display text-base font-bold text-navy">
+                Statutory Mandi Operating Parameters
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-3 text-xs">
+                <div className="rounded-xl bg-muted/40 border border-border p-3 space-y-1">
+                  <p className="font-bold text-navy">PFMS DBT SLA Window</p>
+                  <p className="text-leaf text-sm font-extrabold">48 Hours Maximum</p>
+                  <p className="text-muted-foreground">Direct treasury transfer to NPCI Aadhaar linked bank accounts.</p>
+                </div>
+                <div className="rounded-xl bg-muted/40 border border-border p-3 space-y-1">
+                  <p className="font-bold text-navy">Slot Scheduling Window</p>
+                  <p className="text-leaf text-sm font-extrabold">45 Minutes per Batch</p>
+                  <p className="text-muted-foreground">Dynamic throttle to prevent highway tractor queues.</p>
+                </div>
+                <div className="rounded-xl bg-muted/40 border border-border p-3 space-y-1">
+                  <p className="font-bold text-navy">Foreign Matter Allowance</p>
+                  <p className="text-leaf text-sm font-extrabold">0.75% Maximum</p>
+                  <p className="text-muted-foreground">Mandatory aspiration cleaning for lots above 0.75%.</p>
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 9: ADMINISTRATION (USERS & CENTRES)
+            TAB 7: AUDIT TRAIL & SYSTEM HEALTH
+        ══════════════════════════════════════════════════════════════ */}
+        {activeSection === "governance" && (
+          <div className="mt-6 space-y-6">
+            {/* System Health Telemetry */}
+            <div className="surface-lift p-5 space-y-3">
+              <SectionLabel tone="light">{hi ? "सिस्टम स्वास्थ्य एवं कनेक्टिविटी" : "System Health & Channel Connectivity"}</SectionLabel>
+              <div className="grid gap-3 sm:grid-cols-4 text-xs">
+                <div className="rounded-xl bg-card p-3 border border-border space-y-1 shadow-2xs">
+                  <div className="flex items-center gap-1.5 text-leaf font-bold">
+                    <span className="size-2 rounded-full bg-leaf animate-pulse" />
+                    Supabase PostgreSQL
+                  </div>
+                  <p className="text-navy font-extrabold">Online (Healthy)</p>
+                  <p className="text-[10px] text-muted-foreground">Latency: ~34ms</p>
+                </div>
+                <div className="rounded-xl bg-card p-3 border border-border space-y-1 shadow-2xs">
+                  <div className="flex items-center gap-1.5 text-navy font-bold">
+                    <span className="size-2 rounded-full bg-leaf animate-pulse" />
+                    Realtime WebSockets
+                  </div>
+                  <p className="text-navy font-extrabold">8 Tables Connected</p>
+                  <p className="text-[10px] text-muted-foreground">Auto-reconnect active</p>
+                </div>
+                <div className="rounded-xl bg-card p-3 border border-border space-y-1 shadow-2xs">
+                  <div className="flex items-center gap-1.5 text-leaf font-bold">
+                    <span className="size-2 rounded-full bg-leaf" />
+                    Auth & RLS Guard
+                  </div>
+                  <p className="text-navy font-extrabold">Enforced (Zero Bypass)</p>
+                  <p className="text-[10px] text-muted-foreground">JWT session verified</p>
+                </div>
+                <div className="rounded-xl bg-card p-3 border border-border space-y-1 shadow-2xs">
+                  <div className="flex items-center gap-1.5 text-leaf font-bold">
+                    <span className="size-2 rounded-full bg-leaf" />
+                    Electronic Scale RPC
+                  </div>
+                  <p className="text-navy font-extrabold">Atomic Transactions</p>
+                  <p className="text-[10px] text-muted-foreground">operator_process_ticket</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Audit Log Viewer with Filter */}
+            <div className="surface-lift p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h3 className="font-display text-base font-bold text-navy">
+                  Immutable Governance Audit Trail ({filteredAuditLogs.length})
+                </h3>
+                <div className="flex gap-2">
+                  {["all", "auth", "ticket", "intervention", "grievance"].map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setAuditFilter(f)}
+                      className={cn(
+                        "rounded-lg px-2.5 py-1 text-xs font-bold capitalize transition-colors",
+                        auditFilter === f ? "bg-navy text-primary-foreground shadow-2xs" : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-navy"
+                      )}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-foreground">
+                    <thead className="border-b border-border bg-muted/60 uppercase font-bold text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3">Action</th>
+                        <th className="px-4 py-3">Actor Role</th>
+                        <th className="px-4 py-3">Target</th>
+                        <th className="px-4 py-3">Metadata</th>
+                        <th className="px-4 py-3 text-right">Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border font-medium font-mono text-[11px]">
+                      {filteredAuditLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-4 py-3 font-bold text-navy">{log.action}</td>
+                          <td className="px-4 py-3 uppercase text-muted-foreground">{log.actorRole || "SYSTEM"}</td>
+                          <td className="px-4 py-3 text-foreground">{log.targetType ? `${log.targetType} (${log.targetId?.slice(0, 8) || "—"})` : "—"}</td>
+                          <td className="px-4 py-3 text-muted-foreground max-w-xs truncate">{JSON.stringify(log.metadata)}</td>
+                          <td className="px-4 py-3 text-right text-muted-foreground">
+                            {new Date(log.createdAt).toLocaleDateString("en-IN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            TAB 8: ADMINISTRATION (USERS & ROLES)
         ══════════════════════════════════════════════════════════════ */}
         {activeSection === "administration" && (
           <div className="mt-6 space-y-6">
-            <div className="panel-command p-5">
-              <SectionLabel tone="dark">{hi ? "प्रशासनिक प्रबंधन" : "Secondary System Administration"}</SectionLabel>
-              <h2 className="mt-1 font-display text-xl font-extrabold text-command-fg">
-                User Roles & Procurement Centres Configuration
-              </h2>
+            <div className="surface-lift p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <SectionLabel tone="light">{hi ? "प्रशासनिक प्रबंधन" : "User & Role Administration"}</SectionLabel>
+                <h2 className="mt-1 font-display text-xl font-extrabold text-navy">
+                  System Users & Role Authority Assignment
+                </h2>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  placeholder="Search user by name or email..."
+                  className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus-ring"
+                />
+                <select
+                  value={userRoleFilter}
+                  onChange={(e) => setUserRoleFilter(e.target.value)}
+                  className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs text-foreground focus-ring"
+                >
+                  <option value="all">All Roles</option>
+                  <option value="farmer">Farmer</option>
+                  <option value="centre_operator">Operator</option>
+                  <option value="district_admin">District Admin</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
+              </div>
             </div>
 
             {/* Users Table */}
-            <div className="overflow-hidden rounded-2xl border border-command-line bg-command-panel">
-              <div className="p-4 border-b border-command-line flex items-center justify-between">
-                <h3 className="font-display text-sm font-bold text-command-fg">System Users ({users.length})</h3>
-                <span className="text-xs text-command-muted">Click 'Change Role' to reassign</span>
-              </div>
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-command-fg">
-                  <thead className="border-b border-command-line bg-command uppercase font-bold text-command-muted">
+                <table className="w-full text-left text-xs text-foreground">
+                  <thead className="border-b border-border bg-muted/60 uppercase font-bold text-muted-foreground">
                     <tr>
                       <th className="px-4 py-3">User & Email</th>
                       <th className="px-4 py-3">Current Role</th>
@@ -1271,35 +983,35 @@ export function SuperAdminCommandPlatform() {
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-command-line font-medium">
-                    {users.map((u) => (
-                      <tr key={u.id} className="hover:bg-command/40 transition-colors">
+                  <tbody className="divide-y divide-border font-medium">
+                    {filteredUsers.map((u) => (
+                      <tr key={u.id} className="hover:bg-muted/30 transition-colors">
                         <td className="px-4 py-3.5">
-                          <div className="font-bold text-command-fg text-sm">{u.fullName}</div>
-                          <div className="text-[10px] text-command-muted">{u.email}</div>
+                          <div className="font-bold text-navy text-sm">{u.fullName}</div>
+                          <div className="text-[10px] text-muted-foreground">{u.email}</div>
                         </td>
                         <td className="px-4 py-3.5">
                           <span
                             className={cn(
                               "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
                               u.role === "super_admin"
-                                ? "bg-danger/20 text-danger"
+                                ? "bg-danger-soft text-danger border border-danger/30"
                                 : u.role === "district_admin"
-                                ? "bg-saffron/20 text-saffron"
+                                ? "bg-saffron-soft text-saffron border border-saffron/30"
                                 : u.role === "centre_operator"
-                                ? "bg-cyan-signal/20 text-cyan-signal"
-                                : "bg-leaf/20 text-leaf"
+                                ? "bg-navy-soft text-navy border border-navy/30"
+                                : "bg-leaf-soft text-navy border border-leaf/30"
                             )}
                           >
                             {u.role.replace("_", " ")}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5">{u.district || "—"}</td>
+                        <td className="px-4 py-3.5 text-foreground">{u.district || "—"}</td>
                         <td className="px-4 py-3.5 text-right">
                           <button
                             type="button"
                             onClick={() => toggleUserRole(u.id, u.role)}
-                            className="rounded-lg bg-command-line px-2.5 py-1 text-xs font-bold text-cyan-signal hover:bg-command"
+                            className="rounded-lg bg-navy-soft px-2.5 py-1 text-xs font-bold text-navy hover:bg-muted transition-colors focus-ring"
                           >
                             Change Role ⟳
                           </button>

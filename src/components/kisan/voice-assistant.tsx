@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKisan } from "@/lib/kisan/store";
+import { grievanceService } from "@/lib/kisan/services";
 import {
   processSahayakQueryAsync,
   speak,
@@ -25,7 +26,15 @@ interface VoiceAssistantProps {
 }
 
 export function VoiceAssistant({ currentTab = "home", onNavigateTab, onExecuteAction }: VoiceAssistantProps) {
-  const { language, toggleLanguage, farmer, ticket, slot, payment, centres, timeline, grievances, notifications } = useKisan();
+  const { language, toggleLanguage, farmer, ticket, slot, payment, centres, timeline, notifications } = useKisan();
+  const [grievances, setGrievances] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (farmer?.id) {
+      grievanceService.list({ farmerId: farmer.id }).then(setGrievances).catch(() => {});
+    }
+  }, [farmer?.id]);
+
   const hi = language === "hi";
 
   const [state, setState] = useState<VoiceState>("idle");

@@ -29,9 +29,9 @@ export interface SuggestedQuestion {
   textEn: string;
   textHi: string;
   icon: string;
-  tagEn?: string;
-  tagHi?: string;
-  targetTab?: "home" | "centres" | "queue" | "timeline" | "payments" | "grievances" | "help" | "profile";
+  tagEn?: string | undefined;
+  tagHi?: string | undefined;
+  targetTab?: ("home" | "centres" | "queue" | "timeline" | "payments" | "grievances" | "help" | "profile") | undefined;
 }
 
 export interface DynamicDiscoveryOptions {
@@ -71,7 +71,7 @@ export class SahayakQuestionGenerator {
 
     // ─── 1. ACTIVE COMPLAINT CONTEXT ───
     if (grievances && grievances.length > 0) {
-      const activeGrievance = grievances.find((g) => g.status === "new" || g.status === "in_progress" || g.status === "pending");
+      const activeGrievance = grievances.find((g) => g.status === "new" || g.status === "escalated" || g.status === "pending");
       if (activeGrievance) {
         addSuggestion({
           id: "grv_status",
@@ -186,7 +186,7 @@ export class SahayakQuestionGenerator {
 
     // ─── 3. PAYMENT STATUS CONTEXT ───
     if (payment) {
-      if (payment.stage === "pending_verification" || payment.stage === "pfms_processing") {
+      if (payment.stage === "pending_verification" || payment.stage === "in_transfer") {
         addSuggestion({
           id: "payment_status",
           category: "contextual",

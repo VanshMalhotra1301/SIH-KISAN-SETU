@@ -486,6 +486,7 @@ export async function runSahayakNLPTests(mockCtx?: LiveVoiceContext): Promise<{
       farmerId: "HR-KRL-2026-8891",
     },
     ticket: {
+      id: "t-1042",
       token: "KS-1042",
       centreId: "ctr-1",
       slotWindow: "11:30 – 12:00",
@@ -494,6 +495,7 @@ export async function runSahayakNLPTests(mockCtx?: LiveVoiceContext): Promise<{
       stage: "in_queue",
     },
     payment: {
+      id: "p-1042",
       grossAmount: 291600,
       currency: "INR",
       ratePerQuintal: 2430,
@@ -510,6 +512,7 @@ export async function runSahayakNLPTests(mockCtx?: LiveVoiceContext): Promise<{
         code: "KRL-01",
         name: "Karnal Main Mandi",
         nameHi: "करनाल मुख्य मंडी",
+        district: "Karnal",
         distanceKm: 4.2,
         queueLength: 12,
         predictedWaitMin: 45,
@@ -530,6 +533,7 @@ export async function runSahayakNLPTests(mockCtx?: LiveVoiceContext): Promise<{
         code: "SMP-02",
         name: "Sampla Grain Market",
         nameHi: "सांपला अनाज मंडी",
+        district: "Rohtak",
         distanceKm: 8.5,
         queueLength: 3,
         predictedWaitMin: 12,

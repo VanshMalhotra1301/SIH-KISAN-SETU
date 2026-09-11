@@ -25,20 +25,20 @@ export interface ParsedQuery {
   primaryIntent: PrimaryIntent;
   confidence: "HIGH" | "MEDIUM" | "LOW";
   entities: {
-    crop?: string;
-    cropHi?: string;
-    quantity?: number;
-    centreName?: string;
-    centreId?: string;
-    slotWindow?: string;
-    date?: string;
-    token?: string;
-    grievanceCategory?: string;
-    targetTab?: "home" | "centres" | "queue" | "timeline" | "payments" | "grievances" | "help" | "profile";
+    crop?: string | undefined;
+    cropHi?: string | undefined;
+    quantity?: number | undefined;
+    centreName?: string | undefined;
+    centreId?: string | undefined;
+    slotWindow?: string | undefined;
+    date?: string | undefined;
+    token?: string | undefined;
+    grievanceCategory?: string | undefined;
+    targetTab?: ("home" | "centres" | "queue" | "timeline" | "payments" | "grievances" | "help" | "profile") | undefined;
   };
   isMultiIntent: boolean;
   requiresClarification: boolean;
-  clarificationPrompt?: { en: string; hi: string };
+  clarificationPrompt?: { en: string; hi: string } | undefined;
   isOutOfScope: boolean;
 }
 
@@ -538,13 +538,13 @@ export class SahayakNLPEngine {
 
     // Quantity Detection (e.g. 100 quintal, 120 quintals, 100 क्विंटल)
     const qtyMatch = normalized.match(/(\d+)\s*(quintal|quintals|qtl|quental|kilo|kg|क्विंटल)/i);
-    if (qtyMatch) {
+    if (qtyMatch && qtyMatch[1]) {
       entities.quantity = parseInt(qtyMatch[1], 10);
     }
 
     // Token Match (KS-1042 or 1042)
     const tokenMatch = normalized.match(/(ks[- ]?\d{4}|\b\d{4}\b)/i);
-    if (tokenMatch) {
+    if (tokenMatch && tokenMatch[1]) {
       entities.token = tokenMatch[1].toUpperCase().replace(" ", "-");
       if (!entities.token.startsWith("KS-") && entities.token.length === 4) {
         entities.token = `KS-${entities.token}`;
@@ -653,13 +653,13 @@ export class SahayakNLPEngine {
             const stageDescHi =
               payment.stage === "credited"
                 ? "खाते में जमा हो चुका है"
-                : payment.stage === "pfms_processing"
+                : payment.stage === "in_transfer"
                 ? "पीएफएमएस (PFMS) बैंक प्रक्रिया में है"
                 : "स्वीकृति प्रक्रिया में है";
             const stageDescEn =
               payment.stage === "credited"
                 ? "already credited"
-                : payment.stage === "pfms_processing"
+                : payment.stage === "in_transfer"
                 ? "in PFMS bank processing"
                 : "under verification";
 
@@ -787,8 +787,10 @@ export class SahayakNLPEngine {
           const timeline = procRes.data;
           const active = timeline.find((s) => s.state === "active") || timeline[1];
 
-          const msgHi = `आपकी खरीद प्रक्रिया वर्तमान में '${active.labelHi || active.label}' चरण में है (${active.detailHi || active.detail})। कुल 8 में से ${timeline.filter((s) => s.state === "done").length} चरण पूरे हो चुके हैं।`;
-          const msgEn = `Your procurement is currently at step: '${active.label}' (${active.detail}). ${timeline.filter((s) => s.state === "done").length} of 8 stages are complete.`;
+          const activeStep = active || { label: "Processing", labelHi: "प्रसंस्करण", detail: "", detailHi: "" };
+
+          const msgHi = `आपकी खरीद प्रक्रिया वर्तमान में '${activeStep.labelHi || activeStep.label}' चरण में है (${activeStep.detailHi || activeStep.detail})। कुल 8 में से ${timeline.filter((s) => s.state === "done").length} चरण पूरे हो चुके हैं।`;
+          const msgEn = `Your procurement is currently at step: '${activeStep.label}' (${activeStep.detail}). ${timeline.filter((s) => s.state === "done").length} of 8 stages are complete.`;
           responseSections.push(hi ? msgHi : msgEn);
           break;
         }
@@ -1039,14 +1041,15 @@ export class SahayakNLPEngine {
     }
 
     const full = responseSections.join("\n\n");
-    return {
+    const response: SahayakResponse = {
       text: full || (hi ? "सहायक आपकी मदद के लिए तैयार है।" : "Sahayak is ready to assist you."),
       speechText: full || (hi ? "सहायक आपकी मदद के लिए तैयार है।" : "Sahayak is ready to assist you."),
       confidence: parsed.confidence,
-      facts: facts.length > 0 ? facts : undefined,
-      navigationTarget: navigationTarget || undefined,
-      action: action || undefined,
     };
+    if (facts.length > 0) response.facts = facts;
+    if (navigationTarget) response.navigationTarget = navigationTarget;
+    if (action) response.action = action;
+    return response;
   }
 
   /**
@@ -1104,12 +1107,12 @@ export class SahayakNLPEngine {
       primaryIntent: analysis.primaryIntent || "UNKNOWN",
       confidence: analysis.confidence || "HIGH",
       entities: {
-        crop: analysis.entities?.crop || undefined,
-        quantity: analysis.entities?.quantity || undefined,
-        centreName: analysis.entities?.centreName || sessionState.lastReferencedCentreName || undefined,
-        centreId: analysis.entities?.centreId || sessionState.lastReferencedCentreId || undefined,
-        slotWindow: analysis.entities?.timeOrSlot || undefined,
-        token: analysis.entities?.token || undefined,
+        ...(analysis.entities?.crop ? { crop: analysis.entities.crop } : {}),
+        ...(analysis.entities?.quantity ? { quantity: analysis.entities.quantity } : {}),
+        ...(analysis.entities?.centreName || sessionState.lastReferencedCentreName ? { centreName: (analysis.entities?.centreName || sessionState.lastReferencedCentreName)! } : {}),
+        ...(analysis.entities?.centreId || sessionState.lastReferencedCentreId ? { centreId: (analysis.entities?.centreId || sessionState.lastReferencedCentreId)! } : {}),
+        ...(analysis.entities?.timeOrSlot ? { slotWindow: analysis.entities.timeOrSlot } : {}),
+        ...(analysis.entities?.token ? { token: analysis.entities.token } : {}),
       },
       isMultiIntent: analysis.isMultiIntent || false,
       requiresClarification: analysis.requiresClarification || false,

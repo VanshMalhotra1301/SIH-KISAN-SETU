@@ -611,7 +611,7 @@ export function LandingPage() {
             <p className="text-xs text-foreground font-semibold leading-relaxed pt-1">
               🤖 Sahayak:{" "}
               {processSahayakQuery(
-                hi ? voiceDemos[activeVoicePrompt]?.q : (voiceDemos[activeVoicePrompt]?.qEn || voiceDemos[activeVoicePrompt]?.q),
+                (hi ? voiceDemos[activeVoicePrompt]?.q : (voiceDemos[activeVoicePrompt]?.qEn || voiceDemos[activeVoicePrompt]?.q)) || "",
                 { farmer, ticket, slot, payment, centres, timeline },
                 language
               ).text}

@@ -1,6 +1,7 @@
 /**
  * KISAN SETU — Real Supabase Auth & Role Management
  * Pure Supabase Authentication with database role verification.
+ * No hardcoded fallback values for sensitive data (bank details, IDs).
  */
 import { supabase } from "./client";
 
@@ -20,6 +21,7 @@ export interface AppUser {
   centreId?: string | undefined;
   avatarUrl?: string | undefined;
   crop?: string | undefined;
+  cropHi?: string | undefined;
   quantityQuintals?: number | undefined;
   department?: string | undefined;
   bankName?: string | undefined;
@@ -108,40 +110,58 @@ export const ROLE_LABELS: Record<UserRole, { en: string; hi: string; icon: strin
 /**
  * Fetch a user's verified profile and role from the Supabase `profiles` table.
  * Never trust client-provided roles.
+ * Only joins farmer data for farmer-role users to avoid unnecessary queries.
  */
 export async function fetchProfileById(userId: string): Promise<AppUser | null> {
   try {
-    const { data, error } = await supabase
+    // First fetch the profile to determine role
+    const { data: profileData, error: profileError } = await supabase
       .from("profiles")
-      .select("*, farmers(*)")
+      .select("*")
       .eq("id", userId)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (profileError || !profileData) return null;
 
-    const farmerInfo = Array.isArray(data.farmers) ? data.farmers[0] : data.farmers;
-
-    return {
-      id: data.id,
-      email: data.email || "",
-      role: data.role as UserRole,
-      fullName: data.full_name,
-      fullNameHi: data.full_name_hi,
-      phone: data.phone,
-      district: data.district,
-      village: data.village,
-      villageHi: data.village_hi,
-      farmerIdCode: farmerInfo?.farmer_id_code,
-      centreId: data.centre_id,
-      crop: farmerInfo?.crop,
-      quantityQuintals: farmerInfo ? Number(farmerInfo.quantity_quintals) : undefined,
-      bankName: farmerInfo?.bank_name || "State Bank of India",
-      bankAccountMasked: farmerInfo?.bank_account_masked || "••••4417",
-      bankAccountNumber: farmerInfo?.bank_account_number,
-      ifscCode: farmerInfo?.ifsc_code || "SBIN0001234",
-      landAreaAcres: farmerInfo?.land_area_acres ? Number(farmerInfo.land_area_acres) : 5.0,
-      aadhaarNumberMasked: farmerInfo?.aadhaar_number_masked || "•••• •••• 8821",
+    const baseUser: AppUser = {
+      id: profileData.id,
+      email: profileData.email || "",
+      role: profileData.role as UserRole,
+      fullName: profileData.full_name,
+      fullNameHi: profileData.full_name_hi,
+      phone: profileData.phone,
+      district: profileData.district,
+      village: profileData.village,
+      villageHi: profileData.village_hi,
+      centreId: profileData.centre_id,
     };
+
+    // Only fetch farmer-specific data for farmer-role profiles
+    if (profileData.role === "farmer") {
+      const { data: farmerData } = await supabase
+        .from("farmers")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (farmerData) {
+        baseUser.farmerIdCode = farmerData.farmer_id_code;
+        baseUser.crop = farmerData.crop;
+        baseUser.cropHi = farmerData.crop_hi;
+        baseUser.quantityQuintals = farmerData.quantity_quintals ? Number(farmerData.quantity_quintals) : undefined;
+        // Only set bank details if they actually exist in the database — never fabricate
+        baseUser.bankName = farmerData.bank_name || undefined;
+        baseUser.bankAccountMasked = farmerData.bank_account_masked || (farmerData.bank_account_number ? `••••${farmerData.bank_account_number.slice(-4)}` : undefined);
+        baseUser.bankAccountNumber = farmerData.bank_account_number || undefined;
+        baseUser.ifscCode = farmerData.ifsc_code || undefined;
+        baseUser.landAreaAcres = farmerData.land_area_acres ? Number(farmerData.land_area_acres) : undefined;
+        baseUser.aadhaarNumberMasked = farmerData.aadhaar_number_masked || undefined;
+      }
+    } else if (profileData.role === "district_admin" || profileData.role === "super_admin") {
+      baseUser.department = profileData.department;
+    }
+
+    return baseUser;
   } catch (err) {
     console.warn("Error fetching user profile:", err);
     return null;

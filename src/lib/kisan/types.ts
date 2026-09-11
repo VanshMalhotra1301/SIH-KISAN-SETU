@@ -7,7 +7,8 @@
 
 export type Language = "hi" | "en";
 
-export type Role = "farmer" | "centre" | "control";
+/** Matches the canonical roles in `profiles.role` and Supabase auth */
+export type Role = "farmer" | "centre_operator" | "district_admin" | "super_admin";
 
 export type CentreHealth = "green" | "yellow" | "red";
 
@@ -36,6 +37,7 @@ export interface ProcurementCentre {
   code: string;
   name: string;
   nameHi: string;
+  district: string;
   distanceKm: number;
   queueLength: number;
   predictedWaitMin: number;
@@ -65,6 +67,7 @@ export interface SlotSuggestion {
 }
 
 export interface QueueTicket {
+  id: string;
   token: string;
   centreId: string;
   slotWindow: string;
@@ -87,6 +90,7 @@ export interface TimelineStep {
 }
 
 export interface PaymentStatus {
+  id: string;
   grossAmount: number;
   currency: "INR";
   ratePerQuintal: number;
@@ -125,6 +129,7 @@ export interface QueueRow {
 
 export interface CentreAlert {
   id: string;
+  centreId?: string;
   severity: "critical" | "warning" | "info";
   title: string;
   detail: string;
@@ -139,6 +144,7 @@ export interface AiRecommendation {
   confidencePct: number;
   action: { shiftAppointments: number; fromCentreId: string; toCentreId: string };
   status: "pending" | "approved" | "overridden" | "reviewing";
+  createdAt?: string;
 }
 
 export interface ForecastPoint {
@@ -168,10 +174,13 @@ export interface ActivityEvent {
 
 export interface DistrictSummary {
   totalCentres: number;
+  activeCentres: number;
   farmersToday: number;
   quantityProcuredQuintals: number;
   averageWaitMin: number;
   predictedOverloads: number;
+  paymentsPending: number;
+  openGrievances: number;
 }
 
 export interface Grievance {
@@ -208,3 +217,99 @@ export interface DistrictPerformance {
   status: "optimal" | "strained" | "critical";
 }
 
+// ─── Intervention & Intelligence Types ───
+
+export interface InterventionRecord {
+  id: string;
+  recommendationId?: string;
+  type: "rebalance" | "add_counter" | "extend_hours" | "redirect_traffic" | "manual";
+  description: string;
+  appliedBy: string;
+  appliedAt: string;
+  affectedCentreIds: string[];
+  /** Snapshot of metrics before intervention */
+  metricsBefore: {
+    avgWaitMin: number;
+    avgCapacityPct: number;
+    queueLength: number;
+  };
+  /** Snapshot of metrics after intervention (measured later) */
+  metricsAfter?: {
+    avgWaitMin: number;
+    avgCapacityPct: number;
+    queueLength: number;
+    measuredAt: string;
+  };
+  status: "applied" | "measuring" | "measured" | "failed";
+}
+
+export interface AnomalyDetection {
+  id: string;
+  centreId: string;
+  centreName: string;
+  type: "queue_spike" | "processing_slow" | "payment_delay" | "capacity_breach" | "idle_counter";
+  severity: "critical" | "warning" | "info";
+  description: string;
+  detectedAt: string;
+  currentValue: number;
+  expectedValue: number;
+  deviationPct: number;
+  isResolved: boolean;
+}
+
+export interface CongestionPrediction {
+  centreId: string;
+  centreName: string;
+  currentCapacityPct: number;
+  predictedCapacityPct: number;
+  predictedBreachTime?: string | undefined;
+  confidence: number;
+  factors: string[];
+  recommendation?: string | undefined;
+}
+
+export interface WhatIfScenario {
+  id: string;
+  description: string;
+  changes: Array<{
+    centreId: string;
+    parameter: "active_counters" | "processing_rate" | "redirect_farmers";
+    currentValue: number;
+    proposedValue: number;
+  }>;
+  predictedOutcome: {
+    avgWaitChange: number;
+    capacityChange: number;
+    throughputChange: number;
+  };
+}
+
+export interface SystemHealth {
+  supabaseConnected: boolean;
+  realtimeActive: boolean;
+  activeSessions: number;
+  lastSyncAt: string;
+  errorRate: number;
+  avgResponseMs: number;
+}
+
+export interface MspRate {
+  id: string;
+  crop: string;
+  cropHi: string;
+  ratePerQuintal: number;
+  season: string;
+  effectiveFrom: string;
+  effectiveTo?: string;
+}
+
+export interface ProcurementTarget {
+  id: string;
+  district: string;
+  centreId?: string;
+  crop: string;
+  targetQuintals: number;
+  actualQuintals: number;
+  season: string;
+  progressPct: number;
+}

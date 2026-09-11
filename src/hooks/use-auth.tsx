@@ -162,20 +162,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let quantity = 120;
       let centreId: string | null = null;
       let department = "Department of Agriculture";
-      let bankName = "State Bank of India";
+      let bankName: string | null = null;
       let bankAccount: string | null = null;
-      let ifscCode = "SBIN0001234";
-      let landArea = 5.0;
+      let ifscCode: string | null = null;
+      let landArea: number | null = null;
       let aadhaarNumber: string | null = null;
 
       if (payload.role === "farmer") {
         village = payload.village || "";
         crop = payload.crop || "Wheat";
         quantity = payload.quantityQuintals || 120;
-        bankName = payload.bankName || "State Bank of India";
+        bankName = payload.bankName || null;
         bankAccount = payload.bankAccount || null;
-        ifscCode = payload.ifscCode || "SBIN0001234";
-        landArea = payload.landAreaAcres || 5.0;
+        ifscCode = payload.ifscCode || null;
+        landArea = payload.landAreaAcres ?? null;
         aadhaarNumber = payload.aadhaarNumber || null;
       } else if (payload.role === "centre_operator") {
         centreId = payload.centreId;
