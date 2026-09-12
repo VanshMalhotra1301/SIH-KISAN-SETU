@@ -1,11 +1,5 @@
-/**
- * KISAN SETU — Buyer Portal / Mandi Bidding Dashboard
- * Mandi-scoped marketplace for authorised buyers to bid on farmer produce.
- * Connected to Supabase with realtime bidding updates.
- */
-
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PageShell } from "@/components/kisan/app-shell";
 import { AuthGuard } from "@/components/kisan/auth-guard";
@@ -13,7 +7,8 @@ import { Pill, SectionLabel } from "@/components/kisan/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { useKisan } from "@/lib/kisan/store";
 import { biddingService } from "@/lib/kisan/services";
-import type { Bid, BiddingWindow, DealMessage } from "@/lib/kisan/types";
+import { supabase } from "@/lib/supabase/client";
+import type { Bid, BiddingWindow, DealMessage, ProcurementCentre } from "@/lib/kisan/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/buyer")({
@@ -40,6 +35,29 @@ function BuyerPageGuarded() {
 
 type BuyerTab = "marketplace" | "mybids" | "won" | "profile";
 
+function playNewLotChime() {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    const now = ctx.currentTime;
+    osc.frequency.setValueAtTime(523.25, now); // C5
+    osc.frequency.setValueAtTime(659.25, now + 0.12); // E5
+    osc.frequency.setValueAtTime(783.99, now + 0.24); // G5
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    osc.start(now);
+    osc.stop(now + 0.52);
+  } catch {
+    // Audio context may be restricted before user interaction
+  }
+}
+
 function BuyerPortal() {
   const { user } = useAuth();
   const { language, biddingWindows, centres, refreshBiddingWindows } = useKisan();
@@ -48,6 +66,12 @@ function BuyerPortal() {
   const [activeTab, setActiveTab] = useState<BuyerTab>("marketplace");
   const [buyerBids, setBuyerBids] = useState<(Bid & { crop?: string; farmerName?: string; windowStatus?: string })[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Realtime New Lot Alert Popup & Direct Bid Modal
+  const [newLotAlert, setNewLotAlert] = useState<BiddingWindow | null>(null);
+  const [modalBidWindow, setModalBidWindow] = useState<BiddingWindow | null>(null);
+  const seenWindowIdsRef = useRef<Set<string>>(new Set());
+  const initialLoadDoneRef = useRef(false);
 
   // Load buyer bids
   const loadBuyerBids = useCallback(async () => {
@@ -70,6 +94,59 @@ function BuyerPortal() {
     setIsRefreshing(false);
   }, [refreshBiddingWindows, loadBuyerBids]);
 
+  // Sync seen windows and trigger live popup when a new lot arrives
+  useEffect(() => {
+    if (!biddingWindows) return;
+
+    if (!initialLoadDoneRef.current) {
+      initialLoadDoneRef.current = true;
+      // Mark existing windows as seen, but if there's an active unbid open window, trigger the popup alert for it!
+      const unbidWindow = biddingWindows.find(
+        (w) => w.status === "open" && !buyerBids.some((b) => b.windowId === w.id)
+      );
+      biddingWindows.forEach((w) => seenWindowIdsRef.current.add(w.id));
+      if (unbidWindow) {
+        setNewLotAlert(unbidWindow);
+        playNewLotChime();
+      }
+      return;
+    }
+
+    for (const w of biddingWindows) {
+      if (!seenWindowIdsRef.current.has(w.id)) {
+        seenWindowIdsRef.current.add(w.id);
+        if (w.status === "open") {
+          setNewLotAlert(w);
+          playNewLotChime();
+        }
+        break;
+      }
+    }
+  }, [biddingWindows, buyerBids]);
+
+  // Realtime subscription on bidding_windows + background poller (every 4s)
+  useEffect(() => {
+    const channel = supabase
+      .channel("buyer-portal-realtime-windows")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bidding_windows" },
+        () => {
+          refreshBiddingWindows();
+        },
+      )
+      .subscribe();
+
+    const interval = setInterval(() => {
+      refreshBiddingWindows();
+    }, 4000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [refreshBiddingWindows]);
+
   const assignedCentre = useMemo(
     () => centres.find((c) => c.id === user?.centreId),
     [centres, user?.centreId],
@@ -89,6 +166,92 @@ function BuyerPortal() {
 
   return (
     <PageShell>
+      {/* ─── REALTIME NEW FARMER LOT POP-UP ALERT ─── */}
+      {newLotAlert && (
+        <div className="fixed inset-x-4 top-20 z-50 mx-auto max-w-lg animate-in fade-in slide-in-from-top-6 duration-300">
+          <div className="overflow-hidden rounded-3xl border-2 border-leaf bg-card/95 p-6 shadow-2xl backdrop-blur-md ring-4 ring-leaf/20">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-leaf/20 text-2xl animate-bounce">
+                  🔔
+                </span>
+                <div>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-leaf/15 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-leaf">
+                    <span className="h-1.5 w-1.5 rounded-full bg-leaf animate-ping" />
+                    {hi ? "नया किसान लॉट उपलब्ध" : "New Farmer Produce Lot Live"}
+                  </span>
+                  <h3 className="font-display text-base font-extrabold text-navy mt-0.5">
+                    {hi ? "ताज़ा किसान फसल नीलामी विंडो खुली!" : "Fresh Farmer Bidding Window Opened!"}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNewLotAlert(null)}
+                className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-navy transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-muted/50 p-4 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">{hi ? "किसान का नाम" : "Farmer Name"}:</span>
+                <span className="font-extrabold text-navy text-sm">👨‍🌾 {newLotAlert.farmerName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">{hi ? "खरीद मंडी / केंद्र" : "Procurement Mandi"}:</span>
+                <span className="font-semibold text-navy">🏢 {newLotAlert.centreName || "Procurement Centre"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">{hi ? "फसल एवं मात्रा" : "Produce & Quantity"}:</span>
+                <span className="font-extrabold text-leaf text-sm">🌾 {newLotAlert.crop} — {newLotAlert.quantityQuintals} Quintals</span>
+              </div>
+              <div className="flex items-center justify-between border-t border-border/40 pt-2">
+                <span className="text-muted-foreground">{hi ? "सरकारी MSP न्यूनतम दर" : "Floor Rate (Govt MSP)"}:</span>
+                <span className="font-black text-navy text-sm">₹{newLotAlert.mspRate.toLocaleString("en-IN")} / qtl</span>
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setModalBidWindow(newLotAlert);
+                  setNewLotAlert(null);
+                }}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-leaf to-leaf/85 py-3 text-xs font-black text-white shadow-md hover:opacity-95 transition-all focus-ring"
+              >
+                <span>📋</span>
+                <span>{hi ? "तुरंत बोली लगाएँ (Place Bid Now)" : "Place Bid Now"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewLotAlert(null)}
+                className="rounded-xl border border-border px-4 py-3 text-xs font-bold text-muted-foreground hover:bg-muted transition-all"
+              >
+                {hi ? "बाद में देखें" : "View Later"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── DIRECT PLACE BID MODAL ─── */}
+      {modalBidWindow && (
+        <PlaceBidModal
+          window={modalBidWindow}
+          existingBid={buyerBids.find((b) => b.windowId === modalBidWindow.id)}
+          userId={user?.id || ""}
+          hi={hi}
+          onClose={() => setModalBidWindow(null)}
+          onBidPlaced={() => {
+            setModalBidWindow(null);
+            handleRefresh();
+          }}
+        />
+      )}
+
       {/* Hero Section */}
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-saffron/90 via-saffron/70 to-leaf/50 px-6 py-8 text-white shadow-lg">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_70%)]" />
@@ -160,8 +323,10 @@ function BuyerPortal() {
             buyerBids={buyerBids}
             userId={user?.id || ""}
             centreId={user?.centreId || ""}
+            centres={centres}
             hi={hi}
             onBidPlaced={handleRefresh}
+            onOpenBidModal={(w) => setModalBidWindow(w)}
           />
         )}
         {activeTab === "mybids" && (
@@ -203,100 +368,325 @@ function MarketplaceTab({
   buyerBids,
   userId,
   centreId,
+  centres,
   hi,
   onBidPlaced,
+  onOpenBidModal,
 }: {
   windows: BiddingWindow[];
   buyerBids: (Bid & { crop?: string })[];
   userId: string;
   centreId: string;
+  centres: ProcurementCentre[];
   hi: boolean;
   onBidPlaced: () => void;
+  onOpenBidModal: (w: BiddingWindow) => void;
 }) {
-  const [isGeneratingLot, setIsGeneratingLot] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<string>("all");
 
-  const handleGenerateDemoLot = async () => {
-    if (!centreId) return;
-    setIsGeneratingLot(true);
-    try {
-      await biddingService.generateDemoLot(centreId);
-      onBidPlaced();
-    } catch (err: any) {
-      alert(err.message || "Failed to generate lot");
-    } finally {
-      setIsGeneratingLot(false);
-    }
-  };
+  const assignedCentre = useMemo(
+    () => centres.find((c) => c.id === centreId),
+    [centres, centreId],
+  );
+
+  const filteredWindows = useMemo(() => {
+    if (selectedFilter === "all") return windows;
+    return windows.filter((w) => w.centreId === selectedFilter);
+  }, [windows, selectedFilter]);
+
+  const assignedCount = useMemo(
+    () => windows.filter((w) => w.centreId === centreId).length,
+    [windows, centreId],
+  );
 
   if (windows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-muted p-10 text-center space-y-4">
+      <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-muted p-12 text-center space-y-3">
         <span className="text-5xl">🌾</span>
         <div className="space-y-1">
           <p className="font-display text-lg font-bold text-navy">
-            {hi ? "आपकी मंडी में अभी कोई सक्रिय बोली विंडो नहीं है" : "No Active Produce Lots at Your Mandi"}
+            {hi ? "कोई सक्रिय बोली विंडो नहीं" : "No Active Bidding Windows"}
           </p>
           <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
             {hi
-              ? "जैसे ही किसान आपकी नियुक्त मंडी में स्लॉट बुक करेंगे, उनकी उपज की नीलामी विंडो यहाँ स्वतः दिखाई देगी। परीक्षण या डेमो हेतु आप तुरंत नया लॉट बना सकते हैं।"
-              : "When registered farmers book entry slots at your assigned mandi, their live bidding windows appear here automatically. You can also generate an active demo lot right now to test placing bids."}
+              ? "किसान स्लॉट बुकिंग की प्रतीक्षा है। जैसे ही कोई पंजीकृत किसान किसी भी खरीद केंद्र पर स्लॉट बुक करेगा, आपको तुरंत लाइव पॉप-अप अलर्ट मिलेगा और उनकी फसल यहाँ बोली लगाने हेतु दिखाई देगी।"
+              : "Awaiting farmer slot bookings. As soon as any registered farmer books a procurement slot at any centre, an instant pop-up notification will appear here allowing you to place your bid."}
           </p>
         </div>
-
-        {centreId && (
-          <button
-            type="button"
-            onClick={handleGenerateDemoLot}
-            disabled={isGeneratingLot}
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-saffron to-leaf px-5 py-3 text-xs font-black text-white shadow-md hover:opacity-95 transition-all focus-ring disabled:opacity-50"
-          >
-            <span>✨</span>
-            <span>
-              {isGeneratingLot
-                ? (hi ? "लॉट तैयार हो रहा है..." : "Generating Lot...")
-                : (hi ? "🌾 इस मंडी के लिए सक्रिय किसान लॉट बनाएँ (Demo)" : "🌾 Generate Active Farmer Lot (Demo)")}
-            </span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 rounded-full bg-leaf-soft/60 px-3.5 py-1.5 text-xs font-bold text-leaf">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-leaf opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-leaf" />
+          </span>
+          <span>{hi ? "लाइव रियल-टाइम नेटवर्क सक्रिय" : "Live Realtime Network Listening"}</span>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* Header & Mandi Filter Pills */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
         <SectionLabel>
-          🏪 {hi ? "बाज़ार — सक्रिय बोली विंडो" : "Marketplace — Active Bidding Windows"}
+          🏪 {hi ? "बाज़ार — सक्रिय किसान फसल लॉट" : "Marketplace — Active Farmer Produce Lots"}
         </SectionLabel>
 
-        {centreId && (
+        {/* Filter Pills */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
-            onClick={handleGenerateDemoLot}
-            disabled={isGeneratingLot}
-            className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-navy hover:bg-muted transition-all shadow-xs"
+            onClick={() => setSelectedFilter("all")}
+            className={cn(
+              "rounded-xl px-3 py-1.5 text-xs font-bold transition-all",
+              selectedFilter === "all"
+                ? "bg-navy text-white shadow-xs"
+                : "border border-border bg-card text-muted-foreground hover:text-navy",
+            )}
           >
-            <span>+</span>
-            <span>{isGeneratingLot ? "..." : (hi ? "नया डेमो लॉट जोड़ें" : "Add Demo Lot")}</span>
+            🌐 {hi ? "सभी मंडियाँ" : "All Mandis"} ({windows.length})
           </button>
-        )}
+          {centreId && assignedCentre && (
+            <button
+              type="button"
+              onClick={() => setSelectedFilter(centreId)}
+              className={cn(
+                "rounded-xl px-3 py-1.5 text-xs font-bold transition-all",
+                selectedFilter === centreId
+                  ? "bg-navy text-white shadow-xs"
+                  : "border border-border bg-card text-muted-foreground hover:text-navy",
+              )}
+            >
+              🏢 {assignedCentre.name} ({assignedCount})
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {windows.map((w) => (
-          <BiddingWindowCard
-            key={w.id}
-            window={w}
-            existingBid={buyerBids.find((b) => b.windowId === w.id)}
-            userId={userId}
-            hi={hi}
-            onBidPlaced={onBidPlaced}
-          />
-        ))}
+      {filteredWindows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border p-8 text-center text-xs text-muted-foreground">
+          {hi
+            ? "इस मंडी में अभी कोई सक्रिय लॉट नहीं है। सभी मंडियों के लॉट देखने के लिए 'सभी मंडियाँ' चुनें।"
+            : "No active lots for this specific mandi right now. Select 'All Mandis' to see produce across all centres."}
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredWindows.map((w) => (
+            <BiddingWindowCard
+              key={w.id}
+              window={w}
+              existingBid={buyerBids.find((b) => b.windowId === w.id)}
+              userId={userId}
+              hi={hi}
+              onBidPlaced={onBidPlaced}
+              onOpenModal={() => onOpenBidModal(w)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Place Bid Modal (Direct from Pop-up Alert or Card) ───
+
+function PlaceBidModal({
+  window: w,
+  existingBid,
+  userId,
+  hi,
+  onClose,
+  onBidPlaced,
+}: {
+  window: BiddingWindow;
+  existingBid?: any;
+  userId: string;
+  hi: boolean;
+  onClose: () => void;
+  onBidPlaced: () => void;
+}) {
+  const [bidAmount, setBidAmount] = useState(
+    existingBid ? String(existingBid.bidAmount) : String(w.mspRate + 50)
+  );
+  const [bidQuantity, setBidQuantity] = useState(String(w.quantityQuintals));
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const numAmt = Number(bidAmount) || 0;
+  const numQty = Number(bidQuantity) || 0;
+  const totalValuation = numAmt * numQty;
+
+  const quickIncrements = [25, 50, 100, 150];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (numAmt < w.mspRate) {
+      setError(
+        hi
+          ? `न्यूनतम बोली सरकारी एमएसपी ₹${w.mspRate}/क्विंटल से कम नहीं हो सकती।`
+          : `Bid amount cannot be lower than Govt MSP (₹${w.mspRate}/qtl).`
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await biddingService.submitBid({
+        windowId: w.id,
+        buyerId: userId,
+        bidAmount: numAmt,
+        quantityQuintals: numQty,
+      });
+      onBidPlaced();
+    } catch (err: any) {
+      setError(err.message || "Failed to submit bid");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
+      <div className="relative w-full max-w-lg rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4 animate-rise">
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div>
+            <span className="text-xs font-black uppercase tracking-wider text-leaf">
+              📋 {hi ? "क्रेता बोली फॉर्म" : "Mandi Produce Bid Desk"}
+            </span>
+            <h3 className="font-display text-lg font-extrabold text-navy">
+              {w.crop} — {w.quantityQuintals} Quintals
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              👨‍🌾 {w.farmerName} • 🏢 {w.centreName || "Procurement Centre"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex size-8 items-center justify-center rounded-lg border border-border text-xs font-bold text-muted-foreground hover:text-navy"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Pricing Summary */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-muted/60 p-3">
+            <span className="text-[10px] font-bold uppercase text-muted-foreground">
+              {hi ? "सरकारी MSP न्यूनतम दर" : "Floor Rate (MSP)"}
+            </span>
+            <p className="font-display text-base font-black text-navy">
+              ₹{w.mspRate.toLocaleString("en-IN")}/qtl
+            </p>
+          </div>
+          <div className="rounded-xl bg-leaf-soft/40 p-3">
+            <span className="text-[10px] font-bold uppercase text-leaf">
+              {hi ? "सर्वोच्च बोली" : "Highest Bid"}
+            </span>
+            <p className="font-display text-base font-black text-leaf">
+              {w.highestBid ? `₹${w.highestBid.toLocaleString("en-IN")}/qtl` : (hi ? "अभी कोई नहीं" : "None yet")}
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-navy">
+                {hi ? "आपकी प्रस्तावित बोली दर (₹ / क्विंटल)" : "Your Offered Rate (₹ / Quintal)"}
+              </label>
+              <span className="text-[11px] text-muted-foreground">
+                Min: ₹{w.mspRate}/qtl
+              </span>
+            </div>
+            <input
+              type="number"
+              required
+              min={w.mspRate}
+              step={1}
+              value={bidAmount}
+              onChange={(e) => setBidAmount(e.target.value)}
+              className="mt-1 h-12 w-full rounded-xl border border-input bg-card px-4 text-base font-black text-navy focus-ring"
+            />
+            {/* Quick Increment Buttons */}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="text-[10px] font-semibold text-muted-foreground self-center mr-1">
+                {hi ? "त्वरित चयन:" : "Quick add:"}
+              </span>
+              {quickIncrements.map((inc) => (
+                <button
+                  key={inc}
+                  type="button"
+                  onClick={() => setBidAmount(String(w.mspRate + inc))}
+                  className="rounded-lg border border-border bg-muted/60 px-2.5 py-1 text-[11px] font-bold text-navy hover:bg-leaf-soft hover:text-leaf hover:border-leaf/40 transition-colors"
+                >
+                  +₹{inc} (₹{w.mspRate + inc})
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-navy">
+              {hi ? "खरीद मात्रा (क्विंटल)" : "Procurement Quantity (Quintals)"}
+            </label>
+            <input
+              type="number"
+              required
+              min={1}
+              max={w.quantityQuintals}
+              value={bidQuantity}
+              onChange={(e) => setBidQuantity(e.target.value)}
+              className="mt-1 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-bold text-navy focus-ring"
+            />
+          </div>
+
+          {/* Total Valuation Card */}
+          <div className="flex items-center justify-between rounded-xl bg-navy/5 p-3 text-xs">
+            <span className="font-semibold text-muted-foreground">{hi ? "कुल अनुमानित सौदा राशि:" : "Total Offer Valuation:"}</span>
+            <span className="font-display text-base font-black text-leaf">
+              ₹{totalValuation.toLocaleString("en-IN")}
+            </span>
+          </div>
+
+          {error && (
+            <p className="rounded-lg bg-danger-soft p-2.5 text-xs font-bold text-danger">
+              ⚠️ {error}
+            </p>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-leaf to-leaf/85 py-3 text-xs font-black text-white shadow-md hover:opacity-95 transition-all focus-ring disabled:opacity-50"
+            >
+              <span>📋</span>
+              <span>
+                {isSubmitting
+                  ? (hi ? "जमा हो रहा है..." : "Submitting...")
+                  : existingBid
+                    ? (hi ? "बोली अपडेट करें" : "Update Bid")
+                    : (hi ? "बोली जमा करें (Submit Bid)" : "Submit Bid")}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-border px-4 py-3 text-xs font-bold text-muted-foreground hover:bg-muted transition-all"
+            >
+              {hi ? "रद्द करें" : "Cancel"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
 }
+
+// ─── Bidding Window Card ───
 
 function BiddingWindowCard({
   window: w,
@@ -304,12 +694,14 @@ function BiddingWindowCard({
   userId,
   hi,
   onBidPlaced,
+  onOpenModal,
 }: {
   window: BiddingWindow;
   existingBid?: any;
   userId: string;
   hi: boolean;
   onBidPlaced: () => void;
+  onOpenModal?: () => void;
 }) {
   const [showBidForm, setShowBidForm] = useState(false);
   const [bidAmount, setBidAmount] = useState(existingBid ? String(existingBid.bidAmount) : String(w.mspRate + 50));
@@ -465,12 +857,15 @@ function BiddingWindowCard({
       ) : (
         <button
           type="button"
-          onClick={() => setShowBidForm(true)}
-          className="mt-4 w-full rounded-xl bg-gradient-to-r from-saffron to-saffron/80 px-4 py-3 text-sm font-bold text-primary-foreground transition-transform hover:-translate-y-0.5 hover:shadow-md"
+          onClick={() => (onOpenModal ? onOpenModal() : setShowBidForm(true))}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-leaf to-leaf/85 px-4 py-3 text-sm font-bold text-white shadow-xs transition-transform hover:-translate-y-0.5 hover:shadow-md"
         >
-          {existingBid
-            ? (hi ? "🔄 बोली अपडेट करें" : "🔄 Update Bid")
-            : (hi ? "📋 बोली लगाएँ" : "📋 Place Bid")}
+          <span>📋</span>
+          <span>
+            {existingBid
+              ? (hi ? "🔄 बोली अपडेट करें" : "🔄 Update Bid")
+              : (hi ? "📋 बोली लगाएँ" : "📋 Place Bid")}
+          </span>
         </button>
       )}
     </div>

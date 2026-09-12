@@ -479,10 +479,11 @@ export function FarmerPortal() {
       });
 
       await refreshFromDatabase();
+      await refreshBiddingWindows();
       setSuccessBanner(
         hi
-          ? `🎉 स्लॉट आरक्षित! टोकन: ${res.token} (${windowToBook}) — डिजिटल गेट पास तैयार है`
-          : `🎉 Slot confirmed! Token: ${res.token} (${windowToBook}) — Digital Gate Pass Generated`
+          ? `🎉 स्लॉट आरक्षित! टोकन: ${res.token} (${windowToBook}) — डिजिटल गेट पास एवं लाइव मंडी बोली विंडो सक्रिय है! व्यापारी अब आपकी फसल पर बोली लगा सकते हैं।`
+          : `🎉 Slot confirmed! Token: ${res.token} (${windowToBook}) — Digital Gate Pass & Live Mandi Bidding Window is OPEN! Authorized buyers can now place bids.`
       );
       setBookingCentre(null);
       setShowRescheduleModal(false);
@@ -583,16 +584,30 @@ export function FarmerPortal() {
   // Guidance Banner Status
   const dynamicGuidance = useMemo(() => {
     // If farmer has an active bidding window with active/negotiating bids, and ticket is scheduled/waiting
-    if (activeWindow && activeWindow.status === "open" && farmerBids.length > 0 && highestBid && ticket && (ticket.stage === "waiting" || ticket.stage === "scheduled" || ticket.stage === "booked")) {
-      const surplus = highestBid.bidAmount - mspRate;
+    if (activeWindow && activeWindow.status === "open" && ticket && (ticket.stage === "waiting" || ticket.stage === "scheduled" || ticket.stage === "booked")) {
+      if (farmerBids.length > 0 && highestBid) {
+        const surplus = highestBid.bidAmount - mspRate;
+        return {
+          title: hi
+            ? `📢 लाइव मंडी डील: सर्वश्रेष्ठ बोली ₹${highestBid.bidAmount}/क्विंटल (${highestBid.buyerName || "व्यापारी"})`
+            : `📢 Live Mandi Deals: Best Offer ₹${highestBid.bidAmount}/qtl (${highestBid.buyerName || "Buyer"})`,
+          desc: hi
+            ? `अधिकृत व्यापारियों से ${farmerBids.length} बोलियाँ प्राप्त हुई हैं। एमएसपी से +₹${surplus > 0 ? surplus : 0}/क्विंटल अधिक मुनाफा! बातचीत करें या सौदा स्वीकार करें।`
+            : `Received ${farmerBids.length} live offers from mandi buyers (+₹${surplus > 0 ? surplus : 0}/qtl above MSP). Negotiate or accept in the Deal Room.`,
+          actionLabel: hi ? "डील रूम खोलें →" : "Open Deal Room →",
+          tab: "bids" as FarmerTab,
+          tone: "saffron" as const,
+          icon: "🏪",
+        };
+      }
       return {
         title: hi
-          ? `📢 लाइव मंडी डील: सर्वश्रेष्ठ बोली ₹${highestBid.bidAmount}/क्विंटल (${highestBid.buyerName || "व्यापारी"})`
-          : `📢 Live Mandi Deals: Best Offer ₹${highestBid.bidAmount}/qtl (${highestBid.buyerName || "Buyer"})`,
+          ? `🏪 लाइव मंडी बोली विंडो सक्रिय (${activeWindow.crop} · ${activeWindow.quantityQuintals} क्विंटल)`
+          : `🏪 Live Mandi Bidding Window Active (${activeWindow.crop} · ${activeWindow.quantityQuintals} qtl)`,
         desc: hi
-          ? `अधिकृत व्यापारियों से ${farmerBids.length} बोलियाँ प्राप्त हुई हैं। एमएसपी से +₹${surplus > 0 ? surplus : 0}/क्विंटल अधिक मुनाफा! बातचीत करें या सौदा स्वीकार करें।`
-          : `Received ${farmerBids.length} live offers from mandi buyers (+₹${surplus > 0 ? surplus : 0}/qtl above MSP). Negotiate or accept in the Deal Room.`,
-        actionLabel: hi ? "डील रूम खोलें →" : "Open Deal Room →",
+          ? `आपका लॉट मंडी के अधिकृत व्यापारियों के लिए लाइव है। न्यूनतम सरकारी MSP ₹${mspRate}/क्विंटल सुरक्षित है। जैसे ही बोली आएगी, आप मोलतोल कर सकेंगे।`
+          : `Your produce lot is live to verified mandi buyers. Guaranteed floor at ₹${mspRate}/qtl (MSP). Click below to view live buyers or negotiate bids.`,
+        actionLabel: hi ? "बोली एवं सौदा रूम खोलें →" : "Open Bidding & Deal Room →",
         tab: "bids" as FarmerTab,
         tone: "saffron" as const,
         icon: "🏪",
@@ -900,23 +915,30 @@ export function FarmerPortal() {
                 <button
                   type="button"
                   onClick={() => setActiveTab("queue")}
-                  className="flex-1 rounded-xl bg-navy py-3 text-xs font-bold text-primary-foreground transition-transform hover:-translate-y-0.5 focus-ring"
+                  className="flex-1 min-w-[140px] rounded-xl bg-navy py-3 text-xs font-bold text-primary-foreground transition-transform hover:-translate-y-0.5 focus-ring"
                 >
-                  {hi ? "लाइव वर्चुअल कतार खोलें →" : "Open Live Virtual Queue →"}
+                  {hi ? "लाइव कतार खोलें →" : "Open Live Queue →"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("bids")}
+                  className="flex-1 min-w-[170px] rounded-xl border-2 border-saffron bg-saffron-soft/80 py-3 text-xs font-black text-saffron-dark hover:bg-saffron-soft transition-all shadow-xs"
+                >
+                  🏪 {hi ? `बोली एवं सौदा रूम ${farmerBids.length > 0 ? `(${farmerBids.length})` : ""}` : `Bidding & Deal Room ${farmerBids.length > 0 ? `(${farmerBids.length})` : ""}`} →
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowGatePassModal(true)}
                   className="rounded-xl border border-leaf/40 bg-leaf-soft px-4 py-3 text-xs font-bold text-navy hover:bg-leaf/20 focus-ring"
                 >
-                  🖨️ {hi ? "गेट पास प्रिंट करें" : "Print Gate Pass"}
+                  🖨️ {hi ? "गेट पास" : "Gate Pass"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowRescheduleModal(true)}
                   className="rounded-xl border border-border bg-card px-4 py-3 text-xs font-bold text-muted-foreground hover:text-navy focus-ring"
                 >
-                  {hi ? "स्लॉट बदलें (Reschedule)" : "Reschedule Slot"}
+                  {hi ? "बदलें" : "Reschedule"}
                 </button>
               </div>
             </div>
@@ -1247,6 +1269,39 @@ export function FarmerPortal() {
                 isHindi={hi}
                 onPrint={() => window.print()}
               />
+
+              {/* Live Mandi Bidding & Deal Desk Callout */}
+              {activeWindow && activeWindow.status === "open" && (
+                <div className="surface-lift border-2 border-saffron/60 bg-gradient-to-r from-saffron-soft/40 via-card to-background p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-sm">
+                  <div className="flex items-center gap-3.5">
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-saffron-soft text-2xl">
+                      🏪
+                    </span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-saffron-soft px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-saffron-dark">
+                          {hi ? "लाइव मंडी बोली विंडो खुली है" : "Live Mandi Bidding Desk Open"}
+                        </span>
+                        <span className="text-xs font-bold text-muted-foreground">
+                          {activeWindow.crop} · {activeWindow.quantityQuintals} qtl
+                        </span>
+                      </div>
+                      <p className="font-extrabold text-navy text-sm mt-1">
+                        {farmerBids.length > 0 && highestBid
+                          ? (hi ? `क्रेताओं से ${farmerBids.length} बोलियाँ प्राप्त! सर्वोच्च बोली: ₹${highestBid.bidAmount}/क्विंटल (+₹${highestBid.bidAmount - mspRate} अधिक)` : `Received ${farmerBids.length} buyer bids! Best Offer: ₹${highestBid.bidAmount}/qtl (+₹${highestBid.bidAmount - mspRate} above MSP)`)
+                          : (hi ? `आपका लॉट पंजीकृत मंडी व्यापारियों के लिए लाइव है। न्यूनतम सरकारी MSP ₹${mspRate}/क्विंटल सुरक्षित।` : `Your produce is live to verified mandi buyers. Govt MSP floor (₹${mspRate}/qtl) is fully guaranteed.`)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("bids")}
+                    className="shrink-0 rounded-xl bg-gradient-to-r from-navy to-navy/90 px-5 py-3 text-xs font-black text-white hover:opacity-95 transition-all shadow-md focus-ring"
+                  >
+                    🏪 {hi ? "बोली एवं सौदा रूम खोलें →" : "Open Mandi Deal Room →"}
+                  </button>
+                </div>
+              )}
 
               {/* Live Virtual Queue Radar */}
               <div className="surface-lift p-6 space-y-5 border-2 border-leaf/40">

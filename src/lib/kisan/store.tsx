@@ -302,11 +302,10 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           error: null,
         }));
       } else if (role === "buyer") {
-        // BUYER: assigned centre, open bidding windows, buyer's own bids, notifications
-        const effectiveCentreId = centreId || "";
+        // BUYER: list all centres, open bidding windows across cluster, buyer's own bids, notifications
         const results = await Promise.allSettled([
-          effectiveCentreId ? centreService.getById(effectiveCentreId) : centreService.list(), // 0
-          effectiveCentreId ? biddingService.getWindowsForBuyer(effectiveCentreId) : Promise.resolve([]), // 1
+          centreService.list(), // 0 - all centres for full network visibility
+          biddingService.getWindowsForBuyer(), // 1 - open lots from any centre
           activeUserId ? biddingService.getBidsByBuyer(activeUserId) : Promise.resolve([]), // 2
           notificationsP, // 3
         ]);
@@ -393,9 +392,9 @@ export function KisanProvider({ children }: { children: ReactNode }) {
   const refreshBiddingWindows = useCallback(async () => {
     try {
       const role = user?.role;
-      if (role === "buyer" && user?.centreId) {
-        const biddingWindows = await biddingService.getWindowsForBuyer(user.centreId);
-        const farmerBids = await biddingService.getBidsByBuyer(user.id);
+      if (role === "buyer") {
+        const biddingWindows = await biddingService.getWindowsForBuyer();
+        const farmerBids = user?.id ? await biddingService.getBidsByBuyer(user.id) : [];
         setState((s) => ({ ...s, biddingWindows, farmerBids: farmerBids as any }));
       } else if (role === "farmer" && user?.id) {
         const biddingWindows = await biddingService.getWindowsForFarmer(user.id);

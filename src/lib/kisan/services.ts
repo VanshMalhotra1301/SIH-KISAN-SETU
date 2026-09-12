@@ -290,14 +290,19 @@ export const farmerService = {
       metadata: { token, centreId: params.centreId, slotWindow },
     });
 
-    // 9. Create bidding window for buyer marketplace (non-blocking — failure does not affect normal procurement)
-    supabase.rpc("create_bidding_window", {
-      p_ticket_id: ticketId,
-      p_farmer_id: params.farmerId,
-      p_centre_id: params.centreId,
-      p_crop: params.crop,
-      p_quantity: params.quantityQuintals,
-    }).then(({ error }) => { if (error) console.warn("Bidding window creation skipped:", error); });
+    // 9. Create bidding window for buyer marketplace (await to guarantee immediate database record)
+    try {
+      const { error: winErr } = await supabase.rpc("create_bidding_window", {
+        p_ticket_id: ticketId,
+        p_farmer_id: params.farmerId,
+        p_centre_id: params.centreId,
+        p_crop: params.crop,
+        p_quantity: params.quantityQuintals,
+      });
+      if (winErr) console.warn("Bidding window creation warning:", winErr.message);
+    } catch (e) {
+      console.warn("Bidding window RPC exception:", e);
+    }
 
     return { token, ticketId };
   },
@@ -1781,20 +1786,23 @@ export const biddingService = {
     return data as string;
   },
 
-  /** Get open/active bidding windows for a buyer's assigned centre */
-  getWindowsForBuyer: async (centreId: string): Promise<BiddingWindow[]> => {
-    if (!centreId) return [];
-
-    const { data, error } = await supabase
+  /** Get open/active bidding windows (for all centres or filtered by centre) */
+  getWindowsForBuyer: async (centreId?: string): Promise<BiddingWindow[]> => {
+    let query = supabase
       .from("bidding_windows")
       .select(`
         *,
         profiles!bidding_windows_farmer_id_fkey(full_name),
-        procurement_centres!bidding_windows_centre_id_fkey(name)
+        procurement_centres!bidding_windows_centre_id_fkey(name, code)
       `)
-      .eq("centre_id", centreId)
       .in("status", ["open"])
       .order("created_at", { ascending: false });
+
+    if (centreId && centreId !== "all") {
+      query = query.eq("centre_id", centreId);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw new Error(`Failed to load bidding windows: ${error.message}`);
 
