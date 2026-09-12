@@ -1,16 +1,22 @@
 /**
- * KISAN SETU — Database Cleaner & Reset Script
+ * KISAN SETU — Comprehensive Database Cleaner & Pristine Reset Script
  * 
  * Cleans:
- * 1. All test / mock accounts created during testing from `auth.users` and `auth.identities`.
- * 2. All mock tickets, slots, timeline steps, payments, grievances, notifications, and activity logs.
- * 3. All non-standard profiles and farmer records.
- * 4. Resets procurement centres to pristine initial state (0 queue, 0 wait, fresh capacity).
- * 5. Re-establishes the 4 official verified portal accounts:
- *    - farmer@kisansetu.in (Password: KisanSetu2026!)
- *    - centre@kisansetu.in (Password: KisanSetu2026!)
- *    - admin@kisansetu.in (Password: KisanSetu2026!)
- *    - superadmin@kisansetu.in (Password: KisanSetu2026!)
+ * 1. All transactional, deal room, bidding, token, queue, and mock tables:
+ *    - deal_messages, bids, bidding_windows, audit_logs
+ *    - procurement_timeline, payments, grievances, queue_tickets
+ *    - notifications, activity_feed, ai_recommendations, centre_alerts
+ *    - slots, buyers, farmers, profiles
+ * 2. All test accounts from auth.users and auth.identities.
+ * 3. Resets procurement centres to pristine operational state (0 queue, 0 wait, 0 procured today).
+ * 4. Re-establishes the 5 official verified portal accounts:
+ *    - farmer@kisansetu.in      (Password: KisanSetu2026!) -> Farmer (Ramesh Kumar)
+ *    - centre@kisansetu.in      (Password: KisanSetu2026!) -> Centre Operator (Balwinder Singh @ Nilokheri)
+ *    - admin@kisansetu.in       (Password: KisanSetu2026!) -> District Admin (Dr. Amit Verma, IAS)
+ *    - superadmin@kisansetu.in  (Password: KisanSetu2026!) -> Super Admin (State Directorate)
+ *    - buyer@kisansetu.in       (Password: KisanSetu2026!) -> Mandi Buyer (Karnal Agro Traders Ltd @ Nilokheri)
+ * 5. Generates clean unbooked slots schedule for Today & Tomorrow across all centres.
+ * 6. Verifies authentication with Supabase Auth SDK.
  */
 
 import pg from 'pg';
@@ -76,6 +82,21 @@ const OFFICIAL_ACCOUNTS = [
     district: 'State HQ',
     phone: '+91 172 256 0000',
     department: 'State Directorate of Food & Civil Supplies',
+  },
+  {
+    id: '55555555-5555-4555-8555-555555555555',
+    email: 'buyer@kisansetu.in',
+    role: 'buyer',
+    full_name: 'Suresh Singhal',
+    full_name_hi: 'सुरेश सिंघल',
+    village: 'Nilokheri Market',
+    village_hi: 'निलोखेड़ी मार्केट',
+    district: 'Karnal',
+    phone: '+91 98111 22334',
+    business_name: 'Karnal Agro Traders Ltd',
+    business_type: 'trader',
+    license_number: 'APMC-KRN-2024-001',
+    centre_id: 'a1111111-1111-4111-8111-111111111111', // Assigned to Nilokheri Centre
   },
 ];
 
@@ -220,31 +241,78 @@ async function cleanAndResetDatabase() {
   await client.connect();
 
   try {
-    // 1. Delete all transactional, log, and mock tables
-    console.log('\n[1/6] Cleaning all mock transactional tables...');
+    // 1. Delete all transactional, bidding, deal-room, and mock tables
+    console.log('\n[1/6] Cleaning all mock transactional tables in dependency order...');
+    await client.query('DELETE FROM public.deal_messages;');
+    await client.query('DELETE FROM public.bids;');
+    await client.query('DELETE FROM public.bidding_windows;');
+    await client.query('DELETE FROM public.audit_logs;');
+    await client.query('DELETE FROM public.procurement_timeline;');
+    await client.query('DELETE FROM public.payments;');
+    await client.query('DELETE FROM public.grievances;');
+    await client.query('DELETE FROM public.queue_tickets;');
     await client.query('DELETE FROM public.notifications;');
     await client.query('DELETE FROM public.activity_feed;');
     await client.query('DELETE FROM public.ai_recommendations;');
     await client.query('DELETE FROM public.centre_alerts;');
-    await client.query('DELETE FROM public.payments;');
-    await client.query('DELETE FROM public.procurement_timeline;');
-    await client.query('DELETE FROM public.grievances;');
-    await client.query('DELETE FROM public.queue_tickets;');
     await client.query('DELETE FROM public.slots;');
+    await client.query('DELETE FROM public.buyers;');
     await client.query('DELETE FROM public.farmers;');
     await client.query('DELETE FROM public.profiles;');
-    console.log('✓ All public tables cleared cleanly.');
+    console.log('✓ All mock transactional and profile records cleared.');
 
     // 2. Clean all non-official auth accounts
-    console.log('\n[2/6] Cleaning test / mock accounts from auth.users & identities...');
+    console.log('\n[2/6] Cleaning test / mock accounts from auth.users & auth.identities...');
     const officialIds = OFFICIAL_ACCOUNTS.map((a) => `'${a.id}'`).join(',');
 
     await client.query(`DELETE FROM auth.identities WHERE user_id NOT IN (${officialIds});`);
     await client.query(`DELETE FROM auth.users WHERE id NOT IN (${officialIds});`);
     console.log('✓ All temporary and mock accounts deleted from auth schema.');
 
-    // 3. Re-seed official verified role portal accounts
-    console.log('\n[3/6] Re-establishing verified official role accounts...');
+    // 3. Re-seed clean procurement centres first (so foreign keys for centre_id are valid)
+    console.log('\n[3/6] Resetting procurement centres to initial operational state...');
+    await client.query('DELETE FROM public.procurement_centres;');
+
+    for (const c of CENTRES) {
+      await client.query(
+        `
+        INSERT INTO public.procurement_centres (
+          id, code, name, name_hi, distance_km, queue_length, predicted_wait_min,
+          capacity_used_pct, daily_capacity_quintals, procured_today_quintals,
+          active_counters, total_counters, processing_rate_per_hour, farmers_today,
+          map_x, map_y, recommended, recommendation_reasons, recommendation_reasons_hi, status
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb, $20
+        )
+      `,
+        [
+          c.id,
+          c.code,
+          c.name,
+          c.name_hi,
+          c.distance_km,
+          c.queue_length,
+          c.predicted_wait_min,
+          c.capacity_used_pct,
+          c.daily_capacity_quintals,
+          c.procured_today_quintals,
+          c.active_counters,
+          c.total_counters,
+          c.processing_rate_per_hour,
+          c.farmers_today,
+          c.map_x,
+          c.map_y,
+          c.recommended,
+          JSON.stringify(c.recommendation_reasons),
+          JSON.stringify(c.recommendation_reasons_hi),
+          c.status,
+        ]
+      );
+    }
+    console.log('✓ 5 official procurement centres reset with zero queues and clean capacity.');
+
+    // 4. Re-seed verified official role portal accounts
+    console.log('\n[4/6] Re-establishing verified official role accounts...');
     for (const acc of OFFICIAL_ACCOUNTS) {
       const userMeta = JSON.stringify({
         role: acc.role,
@@ -259,6 +327,9 @@ async function cleanAndResetDatabase() {
         quantity_quintals: acc.quantity_quintals || 120,
         centre_id: acc.centre_id || null,
         department: acc.department || 'Department of Agriculture',
+        business_name: acc.business_name || null,
+        business_type: acc.business_type || null,
+        license_number: acc.license_number || null,
       });
 
       const appMeta = JSON.stringify({ provider: 'email', providers: ['email'] });
@@ -303,9 +374,9 @@ async function cleanAndResetDatabase() {
       await client.query(
         `
         INSERT INTO public.profiles (
-          id, role, full_name, full_name_hi, district, village, village_hi, phone
+          id, role, full_name, full_name_hi, district, village, village_hi, phone, centre_id, department
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
         )
         ON CONFLICT (id) DO UPDATE SET
           role = EXCLUDED.role,
@@ -314,9 +385,22 @@ async function cleanAndResetDatabase() {
           district = EXCLUDED.district,
           village = EXCLUDED.village,
           village_hi = EXCLUDED.village_hi,
-          phone = EXCLUDED.phone;
+          phone = EXCLUDED.phone,
+          centre_id = EXCLUDED.centre_id,
+          department = EXCLUDED.department;
       `,
-        [acc.id, acc.role, acc.full_name, acc.full_name_hi, acc.district, acc.village, acc.village_hi, acc.phone]
+        [
+          acc.id,
+          acc.role,
+          acc.full_name,
+          acc.full_name_hi,
+          acc.district,
+          acc.village,
+          acc.village_hi,
+          acc.phone,
+          acc.centre_id || null,
+          acc.department || null,
+        ]
       );
 
       if (acc.role === 'farmer') {
@@ -348,50 +432,34 @@ async function cleanAndResetDatabase() {
           ]
         );
       }
-    }
-    console.log('✓ Official accounts (farmer, centre operator, admin, superadmin) verified and restored.');
 
-    // 4. Re-seed clean procurement centres
-    console.log('\n[4/6] Resetting procurement centres to initial operational state...');
-    await client.query('DELETE FROM public.procurement_centres;');
-
-    for (const c of CENTRES) {
-      await client.query(
-        `
-        INSERT INTO public.procurement_centres (
-          id, code, name, name_hi, distance_km, queue_length, predicted_wait_min,
-          capacity_used_pct, daily_capacity_quintals, procured_today_quintals,
-          active_counters, total_counters, processing_rate_per_hour, farmers_today,
-          map_x, map_y, recommended, recommendation_reasons, recommendation_reasons_hi, status
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb, $20
-        )
-      `,
-        [
-          c.id,
-          c.code,
-          c.name,
-          c.name_hi,
-          c.distance_km,
-          c.queue_length,
-          c.predicted_wait_min,
-          c.capacity_used_pct,
-          c.daily_capacity_quintals,
-          c.procured_today_quintals,
-          c.active_counters,
-          c.total_counters,
-          c.processing_rate_per_hour,
-          c.farmers_today,
-          c.map_x,
-          c.map_y,
-          c.recommended,
-          JSON.stringify(c.recommendation_reasons),
-          JSON.stringify(c.recommendation_reasons_hi),
-          c.status,
-        ]
-      );
+      if (acc.role === 'buyer') {
+        await client.query(
+          `
+          INSERT INTO public.buyers (
+            user_id, business_name, business_type, license_number, licence_number, centre_id, is_active
+          ) VALUES (
+            $1, $2, $3, $4, $4, $5, true
+          )
+          ON CONFLICT (user_id) DO UPDATE SET
+            business_name = EXCLUDED.business_name,
+            business_type = EXCLUDED.business_type,
+            license_number = EXCLUDED.license_number,
+            licence_number = EXCLUDED.licence_number,
+            centre_id = EXCLUDED.centre_id,
+            is_active = true;
+        `,
+          [
+            acc.id,
+            acc.business_name,
+            acc.business_type || 'trader',
+            acc.license_number || 'APMC-KRN-2024-001',
+            acc.centre_id,
+          ]
+        );
+      }
     }
-    console.log('✓ 5 official procurement centres reset with zero queues and clean capacity.');
+    console.log('✓ Official accounts (farmer, centre operator, admin, superadmin, buyer) verified and restored.');
 
     // 5. Generate fresh open slots for today & tomorrow
     console.log('\n[5/6] Generating clean, unbooked slot schedule...');
@@ -443,11 +511,12 @@ async function cleanAndResetDatabase() {
     console.log('\n====================================================');
     console.log('🎉 DATABASE CLEAN & RESET COMPLETE!');
     console.log('All mock data and test accounts have been wiped.');
-    console.log('Official portal accounts are ready:');
+    console.log('Pristine official portal accounts ready to use:');
     console.log(' - Farmer:           farmer@kisansetu.in      / KisanSetu2026!');
     console.log(' - Centre Operator:  centre@kisansetu.in      / KisanSetu2026!');
     console.log(' - District Admin:   admin@kisansetu.in       / KisanSetu2026!');
     console.log(' - Super Admin:      superadmin@kisansetu.in  / KisanSetu2026!');
+    console.log(' - Buyer:            buyer@kisansetu.in       / KisanSetu2026!');
     console.log('====================================================');
   } catch (err) {
     console.error('Error cleaning database:', err);

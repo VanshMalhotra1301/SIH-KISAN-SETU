@@ -4,48 +4,27 @@ dotenv.config();
 
 const { Client } = pg;
 
-async function inspectDb() {
+async function checkTables() {
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false },
   });
-
   await client.connect();
 
-  console.log("=== 1. AUTH USERS ===");
-  const authUsers = await client.query(`
-    SELECT id, email, created_at, raw_user_meta_data->>'role' as role, raw_user_meta_data->>'full_name' as name
-    FROM auth.users
-    ORDER BY created_at DESC;
+  const res = await client.query(`
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+    ORDER BY table_name;
   `);
-  console.table(authUsers.rows);
 
-  console.log("\n=== 2. PUBLIC TABLES ROW COUNTS ===");
-  const tables = [
-    'profiles',
-    'farmers',
-    'procurement_centres',
-    'slots',
-    'queue_tickets',
-    'procurement_timeline',
-    'payments',
-    'grievances',
-    'notifications',
-    'activity_feed',
-    'centre_alerts',
-    'ai_recommendations'
-  ];
-
-  for (const t of tables) {
-    try {
-      const res = await client.query(`SELECT count(*) FROM public.${t}`);
-      console.log(`- public.${t}: ${res.rows[0].count} rows`);
-    } catch (err) {
-      console.log(`- public.${t}: Error or table does not exist (${err.message})`);
-    }
+  console.log("All base tables in public schema:");
+  for (const row of res.rows) {
+    const countRes = await client.query(`SELECT count(*) FROM public."${row.table_name}";`).catch(() => ({ rows: [{ count: 'ERROR' }] }));
+    console.log(`- ${row.table_name}: ${countRes.rows[0].count} rows`);
   }
 
   await client.end();
 }
 
-inspectDb().catch(console.error);
+checkTables().catch(console.error);
