@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as BuyerRouteImport } from './routes/buyer'
 import { Route as CentreRouteImport } from './routes/centre'
 import { Route as ControlTowerRouteImport } from './routes/control-tower'
 import { Route as FarmerRouteImport } from './routes/farmer'
@@ -25,6 +26,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BuyerRoute = BuyerRouteImport.update({
+  id: '/buyer',
+  path: '/buyer',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CentreRoute = CentreRouteImport.update({
@@ -56,6 +62,7 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/buyer': typeof BuyerRoute
   '/centre': typeof CentreRoute
   '/control-tower': typeof ControlTowerRoute
   '/farmer': typeof FarmerRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/buyer': typeof BuyerRoute
   '/centre': typeof CentreRoute
   '/control-tower': typeof ControlTowerRoute
   '/farmer': typeof FarmerRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/buyer': typeof BuyerRoute
   '/centre': typeof CentreRoute
   '/control-tower': typeof ControlTowerRoute
   '/farmer': typeof FarmerRoute
@@ -86,6 +95,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/buyer'
     | '/centre'
     | '/control-tower'
     | '/farmer'
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/buyer'
     | '/centre'
     | '/control-tower'
     | '/farmer'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/buyer'
     | '/centre'
     | '/control-tower'
     | '/farmer'
@@ -114,6 +126,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  BuyerRoute: typeof BuyerRoute
   CentreRoute: typeof CentreRoute
   ControlTowerRoute: typeof ControlTowerRoute
   FarmerRoute: typeof FarmerRoute
@@ -135,6 +148,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/buyer': {
+      id: '/buyer'
+      path: '/buyer'
+      fullPath: '/buyer'
+      preLoaderRoute: typeof BuyerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/centre': {
@@ -178,6 +198,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  BuyerRoute: BuyerRoute,
   CentreRoute: CentreRoute,
   ControlTowerRoute: ControlTowerRoute,
   FarmerRoute: FarmerRoute,

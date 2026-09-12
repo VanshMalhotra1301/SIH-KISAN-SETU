@@ -9,14 +9,21 @@ import { cn } from "@/lib/utils";
 const allNavItems = [
   { to: "/", label: "Overview", labelHi: "परिचय", roles: ["guest"] },
   { to: "/farmer", label: "Farmer Portal", labelHi: "किसान पोर्टल", roles: ["farmer"] },
+  { to: "/buyer", label: "Buyer Portal", labelHi: "क्रेता पोर्टल", roles: ["buyer"] },
   { to: "/centre", label: "Procurement Centre", labelHi: "खरीद केंद्र", roles: ["centre_operator"] },
   { to: "/control-tower", label: "Control Tower", labelHi: "कंट्रोल टावर", roles: ["district_admin"] },
   { to: "/admin", label: "Admin Portal", labelHi: "एडमिन पोर्टल", roles: ["super_admin"] },
   { to: "/login", label: "Portals / Login", labelHi: "लॉगिन / पोर्टल", roles: ["guest"] },
-] as const;
+] as Array<{
+  to: "/farmer" | "/centre" | "/control-tower" | "/admin" | "/buyer" | "/login" | "/";
+  label: string;
+  labelHi: string;
+  roles: readonly string[];
+}>;
 
 const roleBadgeMap = {
   farmer: { label: "Farmer", labelHi: "किसान", icon: "🌾", tone: "leaf" },
+  buyer: { label: "Buyer", labelHi: "क्रेता", icon: "🏪", tone: "saffron" },
   centre_operator: { label: "Centre", labelHi: "केंद्र", icon: "🏢", tone: "navy" },
   district_admin: { label: "Admin", labelHi: "प्रशासन", icon: "🛰️", tone: "saffron" },
   super_admin: { label: "Super Admin", labelHi: "सुपर एडमिन", icon: "🏛️", tone: "danger" },

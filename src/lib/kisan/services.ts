@@ -30,6 +30,11 @@ import type {
   TimelineStep,
   WaitAnalyticsPoint,
   WhatIfScenario,
+  Bid,
+  BiddingWindow,
+  Buyer,
+  DealMessage,
+  MandiBuyerWithBid,
 } from "./types";
 
 // ─── MSP Rate Configuration ───
@@ -284,6 +289,15 @@ export const farmerService = {
       targetId: ticketId,
       metadata: { token, centreId: params.centreId, slotWindow },
     });
+
+    // 9. Create bidding window for buyer marketplace (non-blocking — failure does not affect normal procurement)
+    supabase.rpc("create_bidding_window", {
+      p_ticket_id: ticketId,
+      p_farmer_id: params.farmerId,
+      p_centre_id: params.centreId,
+      p_crop: params.crop,
+      p_quantity: params.quantityQuintals,
+    }).then(({ error }) => { if (error) console.warn("Bidding window creation skipped:", error); });
 
     return { token, ticketId };
   },
@@ -1742,5 +1756,404 @@ export const intelligenceService = {
       capacityChange: Math.round(totalCapacityChange),
       throughputChange: Math.round(totalThroughputChange),
     };
+  },
+};
+
+// ─── Bidding Service (Buyer / Farmer Bidding Workflow) ───
+
+export const biddingService = {
+  /** Create a bidding window after farmer books a slot (calls RPC) */
+  createWindow: async (params: {
+    ticketId: string;
+    farmerId: string;
+    centreId: string;
+    crop: string;
+    quantityQuintals: number;
+  }): Promise<string> => {
+    const { data, error } = await supabase.rpc("create_bidding_window", {
+      p_ticket_id: params.ticketId,
+      p_farmer_id: params.farmerId,
+      p_centre_id: params.centreId,
+      p_crop: params.crop,
+      p_quantity: params.quantityQuintals,
+    });
+    if (error) throw new Error(`Failed to create bidding window: ${error.message}`);
+    return data as string;
+  },
+
+  /** Get open/active bidding windows for a buyer's assigned centre */
+  getWindowsForBuyer: async (centreId: string): Promise<BiddingWindow[]> => {
+    if (!centreId) return [];
+
+    const { data, error } = await supabase
+      .from("bidding_windows")
+      .select(`
+        *,
+        profiles!bidding_windows_farmer_id_fkey(full_name),
+        procurement_centres!bidding_windows_centre_id_fkey(name)
+      `)
+      .eq("centre_id", centreId)
+      .in("status", ["open"])
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`Failed to load bidding windows: ${error.message}`);
+
+    // For each window, compute highest bid + total bids
+    const windows: BiddingWindow[] = [];
+    for (const w of data || []) {
+      const { data: bidStats } = await supabase
+        .from("bids")
+        .select("bid_amount")
+        .eq("window_id", w.id)
+        .eq("status", "active")
+        .order("bid_amount", { ascending: false });
+
+      const profile = Array.isArray(w.profiles) ? w.profiles[0] : w.profiles;
+      const centre = Array.isArray(w.procurement_centres) ? w.procurement_centres[0] : w.procurement_centres;
+
+      windows.push({
+        id: w.id,
+        ticketId: w.ticket_id,
+        farmerId: w.farmer_id,
+        centreId: w.centre_id,
+        crop: w.crop,
+        quantityQuintals: Number(w.quantity_quintals),
+        mspRate: Number(w.msp_rate),
+        status: w.status,
+        acceptedBidId: w.accepted_bid_id,
+        acceptedBuyerId: w.accepted_buyer_id,
+        opensAt: w.opens_at,
+        closesAt: w.closes_at,
+        createdAt: w.created_at,
+        farmerName: profile?.full_name || "Farmer",
+        centreName: centre?.name || "",
+        highestBid: bidStats && bidStats.length > 0 ? Number(bidStats[0]!.bid_amount) : undefined as any,
+        totalBids: bidStats?.length || 0,
+      });
+    }
+
+    return windows;
+  },
+
+  /** Get bidding windows for a specific farmer */
+  getWindowsForFarmer: async (farmerId: string): Promise<BiddingWindow[]> => {
+    if (!farmerId) return [];
+
+    const { data, error } = await supabase
+      .from("bidding_windows")
+      .select(`
+        *,
+        procurement_centres!bidding_windows_centre_id_fkey(name)
+      `)
+      .eq("farmer_id", farmerId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`Failed to load farmer bidding windows: ${error.message}`);
+
+    const windows: BiddingWindow[] = [];
+    for (const w of data || []) {
+      const { data: bidStats } = await supabase
+        .from("bids")
+        .select("bid_amount")
+        .eq("window_id", w.id)
+        .eq("status", "active")
+        .order("bid_amount", { ascending: false });
+
+      const centre = Array.isArray(w.procurement_centres) ? w.procurement_centres[0] : w.procurement_centres;
+
+      windows.push({
+        id: w.id,
+        ticketId: w.ticket_id,
+        farmerId: w.farmer_id,
+        centreId: w.centre_id,
+        crop: w.crop,
+        quantityQuintals: Number(w.quantity_quintals),
+        mspRate: Number(w.msp_rate),
+        status: w.status,
+        acceptedBidId: w.accepted_bid_id,
+        acceptedBuyerId: w.accepted_buyer_id,
+        opensAt: w.opens_at,
+        closesAt: w.closes_at,
+        createdAt: w.created_at,
+        centreName: centre?.name || "",
+        highestBid: bidStats && bidStats.length > 0 ? Number(bidStats[0]!.bid_amount) : undefined as any,
+        totalBids: bidStats?.length || 0,
+      });
+    }
+
+    return windows;
+  },
+
+  /** Get all bids for a specific bidding window */
+  getBidsForWindow: async (windowId: string): Promise<Bid[]> => {
+    if (!windowId) return [];
+
+    const { data, error } = await supabase
+      .from("bids")
+      .select(`
+        *,
+        buyers!bids_buyer_id_fkey(business_name, business_type, license_number, centre_id, profiles(phone))
+      `)
+      .eq("window_id", windowId)
+      .order("bid_amount", { ascending: false });
+
+    if (error) throw new Error(`Failed to load bids: ${error.message}`);
+
+    return (data || []).map((b) => {
+      const buyer = Array.isArray(b.buyers) ? b.buyers[0] : b.buyers;
+      const profile = Array.isArray(buyer?.profiles) ? buyer?.profiles[0] : buyer?.profiles;
+      return {
+        id: b.id,
+        windowId: b.window_id,
+        buyerId: b.buyer_id,
+        bidAmount: Number(b.bid_amount),
+        quantityQuintals: Number(b.quantity_quintals),
+        status: b.status as Bid["status"],
+        createdAt: b.created_at,
+        updatedAt: b.updated_at,
+        buyerName: buyer?.business_name || "Authorized Buyer",
+        buyerBusiness: buyer?.business_type || "trader",
+        buyerLicense: buyer?.license_number || "",
+        buyerPhone: profile?.phone || "",
+      };
+    });
+  },
+
+  /** Get all eligible registered buyers at a mandi paired with their bid on the active lot */
+  getMandiBuyersWithBids: async (centreId: string, windowId: string): Promise<MandiBuyerWithBid[]> => {
+    if (!centreId) return [];
+
+    // 1. Get all active buyers for this mandi
+    const { data: buyersData, error: buyersErr } = await supabase
+      .from("buyers")
+      .select(`
+        *,
+        profiles(phone)
+      `)
+      .eq("centre_id", centreId)
+      .eq("is_active", true);
+
+    if (buyersErr) throw new Error(`Failed to load mandi buyers: ${buyersErr.message}`);
+
+    // 2. Get all bids for this window
+    const bids = windowId ? await biddingService.getBidsForWindow(windowId) : [];
+    const bidsByBuyer = new Map<string, Bid>();
+    for (const b of bids) {
+      bidsByBuyer.set(b.buyerId, b);
+    }
+
+    return (buyersData || []).map((bd) => {
+      const profile = Array.isArray(bd.profiles) ? bd.profiles[0] : bd.profiles;
+      const buyer: Buyer = {
+        id: bd.id,
+        userId: bd.user_id,
+        businessName: bd.business_name,
+        businessType: bd.business_type,
+        licenseNumber: bd.license_number || bd.licence_number || "",
+        centreId: bd.centre_id,
+        isActive: bd.is_active,
+        createdAt: bd.created_at,
+      };
+      return {
+        buyer: {
+          ...buyer,
+          phone: profile?.phone || "",
+        } as any,
+        bid: bidsByBuyer.get(bd.user_id),
+      };
+    });
+  },
+
+  /** Get deal negotiation messages for a specific bid */
+  getDealMessages: async (bidId: string): Promise<DealMessage[]> => {
+    if (!bidId) return [];
+    const { data, error } = await supabase
+      .from("deal_messages")
+      .select("*")
+      .eq("bid_id", bidId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(`Failed to load deal messages: ${error.message}`);
+    return (data || []).map((m) => ({
+      id: m.id,
+      bidId: m.bid_id,
+      windowId: m.window_id,
+      senderId: m.sender_id,
+      senderRole: m.sender_role,
+      message: m.message,
+      proposedPrice: m.proposed_price ? Number(m.proposed_price) : null,
+      proposedQuantity: m.proposed_quantity ? Number(m.proposed_quantity) : null,
+      createdAt: m.created_at,
+    }));
+  },
+
+  /** Send a negotiation message or counter-offer */
+  sendDealMessage: async (params: {
+    bidId: string;
+    windowId: string;
+    senderId: string;
+    senderRole: "farmer" | "buyer";
+    message: string;
+    proposedPrice?: number | null;
+    proposedQuantity?: number | null;
+  }): Promise<any> => {
+    const { data, error } = await supabase.rpc("send_deal_message", {
+      p_bid_id: params.bidId,
+      p_window_id: params.windowId,
+      p_sender_id: params.senderId,
+      p_sender_role: params.senderRole,
+      p_message: params.message,
+      p_proposed_price: params.proposedPrice || null,
+      p_proposed_quantity: params.proposedQuantity || null,
+    });
+    if (error) throw new Error(`Failed to send deal message: ${error.message}`);
+    return data;
+  },
+
+  /** Reject a bid (farmer action) */
+  rejectBid: async (bidId: string, farmerId: string): Promise<any> => {
+    const { data, error } = await supabase.rpc("reject_bid", {
+      p_bid_id: bidId,
+      p_farmer_id: farmerId,
+    });
+    if (error) throw new Error(`Failed to reject bid: ${error.message}`);
+    return data;
+  },
+
+  /** Cancel bidding window and continue with normal government procurement */
+  cancelWindow: async (windowId: string, farmerId: string): Promise<any> => {
+    const { data, error } = await supabase.rpc("cancel_bidding_window", {
+      p_window_id: windowId,
+      p_farmer_id: farmerId,
+    });
+    if (error) throw new Error(`Failed to cancel bidding window: ${error.message}`);
+
+    await analyticsService.pushActivity({
+      kind: "queue",
+      message: `Farmer opted for standard government MSP procurement — queue slot preserved`,
+    });
+
+    return data;
+  },
+
+  /** Get all bids placed by a specific buyer */
+  getBidsByBuyer: async (buyerId: string): Promise<(Bid & { crop?: string; farmerName?: string; windowStatus?: string })[]> => {
+    if (!buyerId) return [];
+
+    const { data, error } = await supabase
+      .from("bids")
+      .select(`
+        *,
+        bidding_windows!bids_window_id_fkey(crop, quantity_quintals, farmer_id, status, msp_rate, profiles!bidding_windows_farmer_id_fkey(full_name))
+      `)
+      .eq("buyer_id", buyerId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`Failed to load buyer bids: ${error.message}`);
+
+    return (data || []).map((b) => {
+      const window = Array.isArray(b.bidding_windows) ? b.bidding_windows[0] : b.bidding_windows;
+      const profile = window?.profiles;
+      const farmerProfile = Array.isArray(profile) ? profile[0] : profile;
+      return {
+        id: b.id,
+        windowId: b.window_id,
+        buyerId: b.buyer_id,
+        bidAmount: Number(b.bid_amount),
+        quantityQuintals: Number(b.quantity_quintals),
+        status: b.status as Bid["status"],
+        createdAt: b.created_at,
+        updatedAt: b.updated_at,
+        crop: window?.crop,
+        farmerName: farmerProfile?.full_name || "Farmer",
+        windowStatus: window?.status,
+      };
+    });
+  },
+
+  /** Submit a bid (calls RPC for atomic validation) */
+  submitBid: async (params: {
+    windowId: string;
+    buyerId: string;
+    bidAmount: number;
+    quantityQuintals: number;
+  }): Promise<string> => {
+    const { data, error } = await supabase.rpc("submit_bid", {
+      p_window_id: params.windowId,
+      p_buyer_id: params.buyerId,
+      p_bid_amount: params.bidAmount,
+      p_quantity: params.quantityQuintals,
+    });
+    if (error) throw new Error(`Failed to submit bid: ${error.message}`);
+
+    await auditService.log({
+      actorId: params.buyerId,
+      actorRole: "buyer",
+      action: "bid_submitted",
+      targetType: "bids",
+      targetId: data as string,
+      metadata: { windowId: params.windowId, amount: params.bidAmount },
+    });
+
+    return data as string;
+  },
+
+  /** Accept a bid (farmer action, calls RPC for atomic acceptance) */
+  acceptBid: async (bidId: string, farmerId: string): Promise<any> => {
+    const { data, error } = await supabase.rpc("accept_bid", {
+      p_bid_id: bidId,
+      p_farmer_id: farmerId,
+    });
+    if (error) throw new Error(`Failed to accept bid: ${error.message}`);
+
+    await analyticsService.pushActivity({
+      kind: "queue",
+      message: `Farmer accepted buyer bid — direct market procurement initiated`,
+    });
+
+    return data;
+  },
+
+  /** Get buyer profile */
+  getBuyerProfile: async (userId: string): Promise<Buyer | null> => {
+    if (!userId) return null;
+    const { data, error } = await supabase
+      .from("buyers")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to load buyer profile: ${error.message}`);
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      userId: data.user_id,
+      businessName: data.business_name,
+      businessType: data.business_type,
+      licenseNumber: data.licence_number || data.license_number || "",
+      centreId: data.centre_id,
+      isActive: data.is_active,
+      createdAt: data.created_at,
+    };
+  },
+
+  /** Withdraw a bid (buyer action) */
+  withdrawBid: async (bidId: string, buyerId: string): Promise<void> => {
+    const { error } = await supabase
+      .from("bids")
+      .update({ status: "withdrawn", updated_at: new Date().toISOString() })
+      .eq("id", bidId)
+      .eq("buyer_id", buyerId);
+
+    if (error) throw new Error(`Failed to withdraw bid: ${error.message}`);
+
+    await auditService.log({
+      actorId: buyerId,
+      actorRole: "buyer",
+      action: "bid_withdrawn",
+      targetType: "bids",
+      targetId: bidId,
+    });
   },
 };

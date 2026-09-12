@@ -5,7 +5,7 @@
  */
 import { supabase } from "./client";
 
-export type UserRole = "farmer" | "centre_operator" | "district_admin" | "super_admin";
+export type UserRole = "farmer" | "centre_operator" | "district_admin" | "super_admin" | "buyer";
 
 export interface AppUser {
   id: string;
@@ -30,6 +30,10 @@ export interface AppUser {
   ifscCode?: string | undefined;
   landAreaAcres?: number | undefined;
   aadhaarNumberMasked?: string | undefined;
+  /** Buyer-specific fields */
+  businessName?: string | undefined;
+  businessType?: string | undefined;
+  licenseNumber?: string | undefined;
 }
 
 export interface SignUpFarmerPayload {
@@ -85,11 +89,26 @@ export interface SignUpSuperAdminPayload {
   department?: string | undefined;
 }
 
+export interface SignUpBuyerPayload {
+  role: "buyer";
+  email: string;
+  password: string;
+  fullName: string;
+  fullNameHi?: string | undefined;
+  phone: string;
+  district: string;
+  centreId: string;
+  businessName: string;
+  businessType?: string | undefined;
+  licenseNumber?: string | undefined;
+}
+
 export type SignUpPayload =
   | SignUpFarmerPayload
   | SignUpOperatorPayload
   | SignUpAdminPayload
-  | SignUpSuperAdminPayload;
+  | SignUpSuperAdminPayload
+  | SignUpBuyerPayload;
 
 /** Role → default portal route mapping */
 export const ROLE_PORTALS: Record<UserRole, string> = {
@@ -97,6 +116,7 @@ export const ROLE_PORTALS: Record<UserRole, string> = {
   centre_operator: "/centre",
   district_admin: "/control-tower",
   super_admin: "/admin",
+  buyer: "/buyer",
 };
 
 /** Role display names */
@@ -105,6 +125,7 @@ export const ROLE_LABELS: Record<UserRole, { en: string; hi: string; icon: strin
   centre_operator: { en: "Centre Operator", hi: "केंद्र प्रभारी", icon: "🏢" },
   district_admin: { en: "District Admin", hi: "जिला प्रशासक", icon: "🛰️" },
   super_admin: { en: "Super Admin", hi: "सुपर एडमिन", icon: "🏛️" },
+  buyer: { en: "Buyer", hi: "क्रेता", icon: "🏪" },
 };
 
 /**
@@ -156,6 +177,19 @@ export async function fetchProfileById(userId: string): Promise<AppUser | null> 
         baseUser.ifscCode = farmerData.ifsc_code || undefined;
         baseUser.landAreaAcres = farmerData.land_area_acres ? Number(farmerData.land_area_acres) : undefined;
         baseUser.aadhaarNumberMasked = farmerData.aadhaar_number_masked || undefined;
+      }
+    } else if (profileData.role === "buyer") {
+      const { data: buyerData } = await supabase
+        .from("buyers")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (buyerData) {
+        baseUser.centreId = buyerData.centre_id;
+        baseUser.businessName = buyerData.business_name;
+        baseUser.businessType = buyerData.business_type;
+        baseUser.licenseNumber = buyerData.licence_number || buyerData.license_number;
       }
     } else if (profileData.role === "district_admin" || profileData.role === "super_admin") {
       baseUser.department = profileData.department;

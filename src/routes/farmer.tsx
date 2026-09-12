@@ -20,9 +20,10 @@ import {
   farmerService,
   grievanceService,
   slotService,
+  biddingService,
 } from "@/lib/kisan/services";
 import { type SahayakAction } from "@/lib/kisan/voice";
-import type { Grievance, ProcurementCentre, SlotSuggestion } from "@/lib/kisan/types";
+import type { Bid, BiddingWindow, Buyer, DealMessage, Grievance, MandiBuyerWithBid, ProcurementCentre, SlotSuggestion } from "@/lib/kisan/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/farmer")({
@@ -89,7 +90,7 @@ function formatRelativeTime(dateString: string, isHindi: boolean) {
   }
 }
 
-type FarmerTab = "home" | "centres" | "queue" | "timeline" | "payments" | "grievances" | "help" | "profile";
+type FarmerTab = "home" | "centres" | "queue" | "timeline" | "payments" | "grievances" | "help" | "profile" | "bids";
 
 export function FarmerPortal() {
   const { user } = useAuth();
@@ -106,6 +107,8 @@ export function FarmerPortal() {
     markAllNotificationsRead,
     deleteNotification,
     refreshFromDatabase,
+    biddingWindows,
+    refreshBiddingWindows,
   } = useKisan();
   const hi = language === "hi";
 
@@ -138,6 +141,20 @@ export function FarmerPortal() {
   const [grievanceTicketToken, setGrievanceTicketToken] = useState("");
   const [grievancePriority, setGrievancePriority] = useState<Grievance["priority"]>("medium");
   const [isSubmittingGrievance, setIsSubmittingGrievance] = useState(false);
+
+  // ─── Bidding & Deal Room State ───
+  const [farmerBids, setFarmerBids] = useState<Bid[]>([]);
+  const [mandiBuyers, setMandiBuyers] = useState<MandiBuyerWithBid[]>([]);
+  const [selectedBidId, setSelectedBidId] = useState<string | null>(null);
+  const [dealMessages, setDealMessages] = useState<DealMessage[]>([]);
+  const [newMessageText, setNewMessageText] = useState("");
+  const [counterPriceInput, setCounterPriceInput] = useState("");
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isAcceptingBid, setIsAcceptingBid] = useState<string | null>(null);
+  const [isRejectingBid, setIsRejectingBid] = useState<string | null>(null);
+  const [isCancellingWindow, setIsCancellingWindow] = useState(false);
+  const [showAcceptConfirmModal, setShowAcceptConfirmModal] = useState<Bid | null>(null);
+  const [dealFilterOption, setDealFilterOption] = useState<"all" | "active_bids" | "negotiating" | "accepted">("all");
 
   // Dynamic farmer info
   const displayName = user?.fullName || farmer?.name || user?.email?.split("@")[0] || (hi ? "किसान भाई" : "Farmer");
@@ -176,6 +193,15 @@ export function FarmerPortal() {
     return selectedCentre || recommendedCentre;
   }, [centres, ticket?.centreId, selectedCentre, recommendedCentre]);
 
+  // Active bidding window for farmer's booked lot
+  const activeWindow = useMemo(() => {
+    if (ticket?.id) {
+      const match = biddingWindows.find((w) => w.ticketId === ticket.id);
+      if (match) return match;
+    }
+    return biddingWindows[0] || null;
+  }, [biddingWindows, ticket?.id]);
+
   // Filtered centres list
   const filteredCentres = useMemo(() => {
     return centres.filter((c) => {
@@ -202,6 +228,79 @@ export function FarmerPortal() {
     }
   }, [user?.id, ticket?.token]);
 
+  // Auto-create bidding window if ticket exists but window hasn't populated yet
+  useEffect(() => {
+    if (ticket?.id && ticket?.centreId && user?.id && !activeWindow) {
+      biddingService.createWindow({
+        ticketId: ticket.id,
+        farmerId: user.id,
+        centreId: ticket.centreId,
+        crop: registeredCrop,
+        quantityQuintals: registeredQuantity,
+      }).then(() => refreshBiddingWindows()).catch(() => {});
+    }
+  }, [ticket?.id, ticket?.centreId, user?.id, activeWindow, registeredCrop, registeredQuantity, refreshBiddingWindows]);
+
+  // Load bids and mandi buyers for the active window
+  useEffect(() => {
+    if (activeWindow?.id && activeWindow?.centreId) {
+      biddingService.getBidsForWindow(activeWindow.id).then((bids) => {
+        setFarmerBids(bids);
+        if (bids.length > 0) {
+          setSelectedBidId((prev) => {
+            if (prev && bids.some((b) => b.id === prev)) return prev;
+            const sorted = [...bids].sort((a, b) => b.bidAmount - a.bidAmount);
+            return sorted[0]!.id;
+          });
+        }
+      }).catch(() => {});
+
+      biddingService.getMandiBuyersWithBids(activeWindow.centreId, activeWindow.id).then((mb) => {
+        setMandiBuyers(mb);
+      }).catch(() => {});
+    }
+  }, [activeWindow?.id, activeWindow?.centreId, biddingWindows]);
+
+  // Load deal messages for the selected bid
+  useEffect(() => {
+    if (selectedBidId) {
+      biddingService.getDealMessages(selectedBidId).then(setDealMessages).catch(() => {});
+    } else {
+      setDealMessages([]);
+    }
+  }, [selectedBidId, biddingWindows]);
+
+  // Selected bid & buyer computed objects
+  const selectedBid = useMemo(() => {
+    return farmerBids.find((b) => b.id === selectedBidId) || farmerBids[0] || null;
+  }, [farmerBids, selectedBidId]);
+
+  const selectedBuyerItem = useMemo(() => {
+    if (!selectedBid) return null;
+    return mandiBuyers.find((m) => m.buyer.userId === selectedBid.buyerId) || null;
+  }, [mandiBuyers, selectedBid]);
+
+  const highestBid = useMemo(() => {
+    if (farmerBids.length === 0) return null;
+    return [...farmerBids].sort((a, b) => b.bidAmount - a.bidAmount)[0];
+  }, [farmerBids]);
+
+  // Filtered mandi buyers list based on deal filter
+  const filteredMandiBuyers = useMemo(() => {
+    return mandiBuyers.filter((item) => {
+      if (dealFilterOption === "active_bids") {
+        return item.bid && (item.bid.status === "active" || item.bid.status === "negotiating");
+      }
+      if (dealFilterOption === "negotiating") {
+        return item.bid && item.bid.status === "negotiating";
+      }
+      if (dealFilterOption === "accepted") {
+        return item.bid && item.bid.status === "accepted";
+      }
+      return true;
+    });
+  }, [mandiBuyers, dealFilterOption]);
+
   // Load available slots when booking centre changes
   useEffect(() => {
     const target = bookingCentre || activeCentre;
@@ -223,7 +322,9 @@ export function FarmerPortal() {
       await markNotificationRead(notif.id);
     }
     const combined = (notif.title + " " + notif.body).toLowerCase();
-    if (combined.includes("टोकन") || combined.includes("token") || combined.includes("स्लॉट") || combined.includes("slot") || combined.includes("queue") || combined.includes("कतार")) {
+    if (combined.includes("बोली") || combined.includes("bid") || combined.includes("deal") || combined.includes("सौदे")) {
+      setActiveTab("bids");
+    } else if (combined.includes("टोकन") || combined.includes("token") || combined.includes("स्लॉट") || combined.includes("slot") || combined.includes("queue") || combined.includes("कतार")) {
       setActiveTab("queue");
     } else if (combined.includes("तुलाई") || combined.includes("weigh") || combined.includes("नमी") || combined.includes("quality") || combined.includes("grade") || combined.includes("टाइमलाइन") || combined.includes("timeline")) {
       setActiveTab("timeline");
@@ -233,6 +334,107 @@ export function FarmerPortal() {
       setActiveTab("grievances");
     }
     setShowNotifs(false);
+  };
+
+  // Handle Sending Negotiation Deal Message
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedBidId || !activeWindow || !user?.id || (!newMessageText.trim() && !counterPriceInput)) {
+      return;
+    }
+
+    setIsSendingMessage(true);
+    try {
+      const price = counterPriceInput ? parseFloat(counterPriceInput) : null;
+      await biddingService.sendDealMessage({
+        bidId: selectedBidId,
+        windowId: activeWindow.id,
+        senderId: user.id,
+        senderRole: "farmer",
+        message: newMessageText.trim() || (price ? `मैंने ₹${price}/क्विंटल का नया प्रस्ताव भेजा है।` : "नमस्ते, इस सौदे पर चर्चा करें।"),
+        proposedPrice: price,
+        proposedQuantity: registeredQuantity,
+      });
+
+      setNewMessageText("");
+      setCounterPriceInput("");
+      const updatedMsgs = await biddingService.getDealMessages(selectedBidId);
+      setDealMessages(updatedMsgs);
+      await refreshBiddingWindows();
+    } catch (err: any) {
+      alert(err.message || "Failed to send message");
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
+
+  // Handle Accepting Bid
+  const handleAcceptBid = async (bid: Bid) => {
+    if (!user?.id) return;
+    setIsAcceptingBid(bid.id);
+    try {
+      await biddingService.acceptBid(bid.id, user.id);
+      setShowAcceptConfirmModal(null);
+      setSuccessBanner(
+        hi
+          ? `✓ बधाई! ₹${bid.bidAmount}/क्विंटल पर ${bid.buyerName || "क्रेता"} के साथ सौदा पक्का हुआ। डिजिटल गेट पास लेकर निर्धारित समय पर केंद्र पहुँचें।`
+          : `✓ Deal Confirmed! Bidding locked with ${bid.buyerName || "Buyer"} at ₹${bid.bidAmount}/qtl. Proceed with your Digital Gate Pass.`
+      );
+      await refreshBiddingWindows();
+      if (activeWindow?.id) {
+        const bids = await biddingService.getBidsForWindow(activeWindow.id);
+        setFarmerBids(bids);
+      }
+      const msgs = await biddingService.getDealMessages(bid.id);
+      setDealMessages(msgs);
+    } catch (err: any) {
+      alert(err.message || "Failed to accept bid");
+    } finally {
+      setIsAcceptingBid(null);
+    }
+  };
+
+  // Handle Rejecting Bid
+  const handleRejectBid = async (bidId: string) => {
+    if (!user?.id) return;
+    if (!confirm(hi ? "क्या आप वाकई इस बोली को अस्वीकार करना चाहते हैं?" : "Are you sure you want to reject this bid?")) return;
+    setIsRejectingBid(bidId);
+    try {
+      await biddingService.rejectBid(bidId, user.id);
+      await refreshBiddingWindows();
+      if (activeWindow?.id) {
+        const bids = await biddingService.getBidsForWindow(activeWindow.id);
+        setFarmerBids(bids);
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to reject bid");
+    } finally {
+      setIsRejectingBid(null);
+    }
+  };
+
+  // Handle Continuing Normal Government Procurement
+  const handleCancelWindow = async () => {
+    if (!activeWindow || !user?.id) return;
+    if (!confirm(hi
+      ? "क्या आप सामान्य सरकारी खरीद (MSP) जारी रखना चाहते हैं? आपका स्लॉट और टोकन पूरी तरह सुरक्षित रहेगा।"
+      : "Continue with normal government MSP procurement? Your booked queue slot and digital gate pass remain 100% active."
+    )) return;
+
+    setIsCancellingWindow(true);
+    try {
+      await biddingService.cancelWindow(activeWindow.id, user.id);
+      setSuccessBanner(
+        hi
+          ? "✓ सामान्य सरकारी MSP खरीद जारी रखी गई है। अपना गेट पास लेकर निर्धारित समय पर केंद्र पहुँचें।"
+          : "✓ Normal MSP procurement resumed. Please arrive at the centre with your Digital Gate Pass."
+      );
+      await refreshBiddingWindows();
+    } catch (err: any) {
+      alert(err.message || "Failed to cancel bidding");
+    } finally {
+      setIsCancellingWindow(false);
+    }
   };
 
   // Handle Slot Booking
@@ -373,8 +575,30 @@ export function FarmerPortal() {
     };
   }, [ticket, centres, activeCentre, displayName, farmerIdCode, user?.phone, farmer?.phone, villageName, districtName, registeredCropHi, registeredQuantity, vehicleNumberInput, hi]);
 
+  // Payment & MSP baseline
+  const mspRate = registeredCrop === "Wheat" ? 2430 : 2300;
+  const grossAmount = payment?.grossAmount ?? (registeredQuantity * mspRate);
+  const isProcurementAccepted = ticket?.stage === "accepted" || ticket?.stage === "done" || Boolean(payment);
+
   // Guidance Banner Status
   const dynamicGuidance = useMemo(() => {
+    // If farmer has an active bidding window with active/negotiating bids, and ticket is scheduled/waiting
+    if (activeWindow && activeWindow.status === "open" && farmerBids.length > 0 && highestBid && ticket && (ticket.stage === "waiting" || ticket.stage === "scheduled" || ticket.stage === "booked")) {
+      const surplus = highestBid.bidAmount - mspRate;
+      return {
+        title: hi
+          ? `📢 लाइव मंडी डील: सर्वश्रेष्ठ बोली ₹${highestBid.bidAmount}/क्विंटल (${highestBid.buyerName || "व्यापारी"})`
+          : `📢 Live Mandi Deals: Best Offer ₹${highestBid.bidAmount}/qtl (${highestBid.buyerName || "Buyer"})`,
+        desc: hi
+          ? `अधिकृत व्यापारियों से ${farmerBids.length} बोलियाँ प्राप्त हुई हैं। एमएसपी से +₹${surplus > 0 ? surplus : 0}/क्विंटल अधिक मुनाफा! बातचीत करें या सौदा स्वीकार करें।`
+          : `Received ${farmerBids.length} live offers from mandi buyers (+₹${surplus > 0 ? surplus : 0}/qtl above MSP). Negotiate or accept in the Deal Room.`,
+        actionLabel: hi ? "डील रूम खोलें →" : "Open Deal Room →",
+        tab: "bids" as FarmerTab,
+        tone: "saffron" as const,
+        icon: "🏪",
+      };
+    }
+
     if (!ticket) {
       return {
         title: hi ? "आज के लिए स्लॉट आरक्षित करें" : "Book Guaranteed Gate Slot for Today",
@@ -479,12 +703,7 @@ export function FarmerPortal() {
       tone: "saffron" as const,
       icon: "🎫",
     };
-  }, [ticket, activeCentre, hi]);
-
-  // Payment status check
-  const isProcurementAccepted = ticket?.stage === "accepted" || ticket?.stage === "done" || Boolean(payment);
-  const mspRate = registeredCrop === "Wheat" ? 2430 : 2300;
-  const grossAmount = payment?.grossAmount ?? (registeredQuantity * mspRate);
+  }, [ticket, activeCentre, hi, activeWindow, farmerBids, highestBid, mspRate]);
 
   return (
     <PageShell tone="light">
@@ -598,6 +817,7 @@ export function FarmerPortal() {
           { id: "home", label: hi ? "🏠 परिचय (Home)" : "🏠 Home" },
           { id: "centres", label: hi ? "🏢 केंद्र एवं स्लॉट" : "🏢 Centres & Slots" },
           { id: "queue", label: hi ? `📋 लाइव कतार ${ticket ? `(${ticket.token})` : ""}` : `📋 Live Queue ${ticket ? `(${ticket.token})` : ""}` },
+          { id: "bids", label: hi ? `🏪 बोलियाँ एवं सौदे ${farmerBids.length > 0 ? `(${farmerBids.length})` : ""}` : `🏪 Bidding & Deals ${farmerBids.length > 0 ? `(${farmerBids.length})` : ""}` },
           { id: "timeline", label: hi ? "🔬 खरीद टाइमलाइन" : "🔬 Timeline & Slip" },
           { id: "payments", label: hi ? "💰 डीबीटी भुगतान" : "💰 Payments & Invoice" },
           { id: "grievances", label: hi ? `⚖️ शिकायतें (${farmerGrievances.length})` : `⚖️ Grievances (${farmerGrievances.length})` },
@@ -1102,6 +1322,640 @@ export function FarmerPortal() {
               >
                 {hi ? "केंद्र चुनें एवं स्लॉट आरक्षित करें →" : "Select Centre & Reserve Slot →"}
               </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          TAB: MANDI BIDDING & INTERACTIVE DEAL ROOM
+      ══════════════════════════════════════════════════════════════ */}
+      {activeTab === "bids" && (
+        <div className="mt-6 space-y-6">
+          {/* Header Card */}
+          <div className="surface-lift p-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-border pb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-saffron/20 px-3 py-1 text-xs font-black text-saffron uppercase">
+                    ⚡ {hi ? "मंडी बोली एवं सौदा कक्ष" : "Live Mandi Deal Room"}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-semibold">
+                    {activeCentre?.name || "Mandi"} ({districtName})
+                  </span>
+                </div>
+                <h2 className="mt-2 font-display text-2xl sm:text-3xl font-black text-navy">
+                  {registeredCropHi} — {registeredQuantity} {hi ? "क्विंटल" : "Quintals"}
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground font-medium">
+                  {hi
+                    ? "लाइसेंस प्राप्त अधिकृत व्यापारियों से सीधी बोलियाँ प्राप्त करें, भाव मोलतोल करें और सर्वोच्च लाभ अर्जित करें।"
+                    : "Direct bidding and negotiation desk with verified mandi buyers. Guaranteed floor at Government MSP."}
+                </p>
+              </div>
+
+              {/* Status and Action */}
+              <div className="flex flex-wrap items-center gap-2">
+                {activeWindow?.status === "open" && (
+                  <button
+                    type="button"
+                    onClick={handleCancelWindow}
+                    disabled={isCancellingWindow}
+                    className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-bold text-navy hover:bg-muted transition-all shadow-xs"
+                    title={hi ? "सरकारी MSP खरीद जारी रखें" : "Stick with Government MSP"}
+                  >
+                    <span>🛡️</span>
+                    <span>{hi ? "सामान्य सरकारी MSP खरीद जारी रखें" : "Continue Normal MSP Procurement"}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await refreshBiddingWindows();
+                    if (activeWindow?.id) {
+                      const [bids, mb] = await Promise.all([
+                        biddingService.getBidsForWindow(activeWindow.id),
+                        biddingService.getMandiBuyersWithBids(activeWindow.centreId, activeWindow.id),
+                      ]);
+                      setFarmerBids(bids);
+                      setMandiBuyers(mb);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 rounded-xl bg-muted px-3 py-2.5 text-xs font-bold text-navy hover:bg-border transition-all"
+                >
+                  <span>🔄</span>
+                  <span className="hidden sm:inline">{hi ? "रीफ़्रेश" : "Refresh"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Key Metric Comparison Cards */}
+            <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {/* Card 1: MSP Floor */}
+              <div className="rounded-2xl border border-border bg-card p-4 shadow-xs">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                  {hi ? "सरकारी एमएसपी (सुरक्षित आधार)" : "Govt MSP Floor"}
+                </span>
+                <p className="mt-1.5 font-display text-2xl font-black text-navy">
+                  ₹{mspRate.toLocaleString("en-IN")}
+                  <span className="text-xs font-normal text-muted-foreground">/{hi ? "क्विंटल" : "qtl"}</span>
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground font-semibold">
+                  {hi ? "न्यूनतम गारंटी:" : "Total guaranteed:"} ₹{(mspRate * registeredQuantity).toLocaleString("en-IN")}
+                </p>
+              </div>
+
+              {/* Card 2: Highest Buyer Offer */}
+              <div className="rounded-2xl border-2 border-saffron/40 bg-saffron-soft/20 p-4 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-saffron uppercase tracking-wider">
+                    {hi ? "सर्वश्रेष्ठ क्रेता बोली" : "Best Mandi Offer"}
+                  </span>
+                  {highestBid && (
+                    <span className="flex size-2 rounded-full bg-saffron animate-pulse" />
+                  )}
+                </div>
+                <p className="mt-1.5 font-display text-2xl font-black text-saffron">
+                  {highestBid ? `₹${highestBid.bidAmount.toLocaleString("en-IN")}` : `₹${mspRate.toLocaleString("en-IN")}`}
+                  <span className="text-xs font-normal text-navy">/{hi ? "क्विंटल" : "qtl"}</span>
+                </p>
+                <p className="mt-1 text-xs font-bold text-navy truncate">
+                  {highestBid?.buyerName ? `${highestBid.buyerName}` : (hi ? "बोलियाँ प्रतीक्षारत..." : "Awaiting bids...")}
+                </p>
+              </div>
+
+              {/* Card 3: Net Extra Profit */}
+              <div className="rounded-2xl border border-leaf/40 bg-leaf-soft/30 p-4 shadow-xs">
+                <span className="text-[11px] font-bold text-leaf uppercase tracking-wider">
+                  {hi ? "एमएसपी से अधिक लाभ" : "Surplus Above MSP"}
+                </span>
+                {highestBid && highestBid.bidAmount > mspRate ? (
+                  <>
+                    <p className="mt-1.5 font-display text-2xl font-black text-leaf">
+                      +₹{(highestBid.bidAmount - mspRate).toLocaleString("en-IN")}
+                      <span className="text-xs font-normal text-leaf">/{hi ? "क्विंटल" : "qtl"}</span>
+                    </p>
+                    <p className="mt-1 text-xs font-extrabold text-leaf">
+                      +₹{((highestBid.bidAmount - mspRate) * registeredQuantity).toLocaleString("en-IN")} {hi ? "अतिरिक्त आय" : "extra income"}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-1.5 font-display text-2xl font-black text-muted-foreground">
+                      ₹0
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground font-semibold">
+                      {hi ? "एमएसपी पूर्णतः सुरक्षित" : "100% MSP Protected"}
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* Card 4: Deal Status */}
+              <div className="rounded-2xl border border-border bg-card p-4 shadow-xs flex flex-col justify-between">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                  {hi ? "सत्र स्थिति" : "Bidding Status"}
+                </span>
+                <div>
+                  {activeWindow?.status === "accepted" ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-leaf-soft px-3 py-1 text-xs font-black text-leaf">
+                      ✓ {hi ? "सौदा स्वीकृत" : "Deal Finalized"}
+                    </span>
+                  ) : activeWindow?.status === "open" ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-saffron-soft px-3 py-1 text-xs font-black text-saffron">
+                      ⚡ {hi ? "लाइव सत्र खुला" : "Live Window Open"}
+                    </span>
+                  ) : activeWindow?.status === "cancelled" ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">
+                      🛡️ {hi ? "सामान्य MSP खरीद" : "Govt MSP Active"}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">
+                      🔒 {hi ? "सत्र बंद" : "Window Closed"}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground font-semibold">
+                  {ticket?.token ? `Token: ${ticket.token}` : (hi ? "स्लॉट आवश्यक" : "Requires slot")}
+                </p>
+              </div>
+            </div>
+
+            {/* MSP Safety Guarantee Alert */}
+            <div className="mt-4 flex items-center gap-3 rounded-2xl bg-leaf-soft/50 border border-leaf/30 p-3.5 text-xs">
+              <span className="text-xl">🛡️</span>
+              <p className="font-semibold text-navy leading-relaxed">
+                <strong className="font-extrabold text-leaf">{hi ? "सरकारी सुरक्षा गारंटी: " : "Zero Risk Guarantee: "}</strong>
+                {hi
+                  ? "मंडी व्यापारियों के साथ बातचीत पूरी तरह ऐच्छिक है। यदि आप कोई बोली स्वीकार नहीं करते, तो आपका निर्धारित स्लॉट और सरकारी एमएसपी (₹" + mspRate + "/क्विंटल) बिना किसी रुकावट के जारी रहेगा।"
+                  : "Bidding is 100% optional. If you decline all bids or do not accept any offer, your booked slot and government MSP payout remain completely secure."}
+              </p>
+            </div>
+          </div>
+
+          {/* If NO active window exists */}
+          {!activeWindow && (
+            <div className="surface-lift p-10 text-center space-y-4">
+              <span className="text-5xl">🏪</span>
+              <h3 className="font-display text-xl font-bold text-navy">
+                {hi ? "कोई सक्रिय बोली सत्र नहीं है" : "No Active Bidding Session"}
+              </h3>
+              <p className="max-w-md mx-auto text-xs text-muted-foreground leading-relaxed">
+                {hi
+                  ? "जब आप किसी खरीद केंद्र में अपना स्लॉट आरक्षित करते हैं, तो उस केंद्र के अधिकृत व्यापारियों के साथ एक बोली सत्र स्वचालित रूप से शुरू हो जाता है।"
+                  : "When you book a gate slot at an authorized procurement centre, a live bidding window opens automatically allowing licensed buyers to place offers."}
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveTab("centres")}
+                className="rounded-xl bg-navy px-6 py-2.5 text-xs font-bold text-primary-foreground focus-ring"
+              >
+                {hi ? "केंद्र चुनें एवं स्लॉट आरक्षित करें →" : "Select Centre & Reserve Slot →"}
+              </button>
+            </div>
+          )}
+
+          {/* Active Window: Split Screen Deal Room */}
+          {activeWindow && (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+              {/* ─── LEFT COLUMN: AUTHORIZED BUYERS & LIVE BIDS (5 cols) ─── */}
+              <div className="lg:col-span-5 space-y-4">
+                <div className="surface-lift p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-display text-base font-extrabold text-navy">
+                        {hi ? "अधिकृत व्यापारी एवं बोलियाँ" : "Mandi Buyers & Live Bids"}
+                      </h3>
+                      <p className="text-[11px] font-semibold text-muted-foreground">
+                        {hi ? `${activeCentre?.name || "मंडी"} में पंजीकृत व्यापारी` : `Licensed buyers at ${activeCentre?.name || "Mandi"}`}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-navy/10 px-2.5 py-1 text-xs font-black text-navy">
+                      {filteredMandiBuyers.length}
+                    </span>
+                  </div>
+
+                  {/* Filter Pills */}
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {[
+                      { key: "all", labelHi: "सभी", label: "All", count: mandiBuyers.length },
+                      { key: "active_bids", labelHi: "सक्रिय बोलियाँ", label: "Bids Placed", count: farmerBids.filter(b => b.status === "active" || b.status === "negotiating").length },
+                      { key: "negotiating", labelHi: "बातचीत जारी", label: "Negotiating", count: farmerBids.filter(b => b.status === "negotiating").length },
+                      { key: "accepted", labelHi: "स्वीकृत", label: "Accepted", count: farmerBids.filter(b => b.status === "accepted").length },
+                    ].map((f) => (
+                      <button
+                        key={f.key}
+                        type="button"
+                        onClick={() => setDealFilterOption(f.key as any)}
+                        className={cn(
+                          "flex items-center gap-1 whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-bold transition-all",
+                          dealFilterOption === f.key
+                            ? "bg-navy text-primary-foreground shadow-xs"
+                            : "bg-muted text-muted-foreground hover:bg-border"
+                        )}
+                      >
+                        <span>{hi ? f.labelHi : f.label}</span>
+                        {f.count > 0 && (
+                          <span className={cn(
+                            "rounded-full px-1.5 py-0.2 text-[10px] font-black",
+                            dealFilterOption === f.key ? "bg-white/20 text-white" : "bg-card text-navy"
+                          )}>
+                            {f.count}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Buyers / Bids List */}
+                  <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+                    {filteredMandiBuyers.length === 0 ? (
+                      <div className="py-12 text-center text-muted-foreground space-y-2">
+                        <span className="text-3xl">📭</span>
+                        <p className="text-xs font-semibold">
+                          {hi ? "इस फ़िल्टर में कोई क्रेता/बोली नहीं है" : "No buyers or bids in this filter"}
+                        </p>
+                      </div>
+                    ) : (
+                      filteredMandiBuyers.map((item) => {
+                        const bid = item.bid;
+                        const isSelected = selectedBid?.id === bid?.id;
+                        const isTopOffer = highestBid && bid && highestBid.id === bid.id && bid.status === "active";
+                        const surplusPerQtl = bid ? bid.bidAmount - mspRate : 0;
+
+                        return (
+                          <div
+                            key={item.buyer.userId}
+                            onClick={() => {
+                              if (bid) {
+                                setSelectedBidId(bid.id);
+                              }
+                            }}
+                            className={cn(
+                              "group relative rounded-2xl border p-4 transition-all cursor-pointer select-none",
+                              isSelected
+                                ? "border-saffron bg-saffron-soft/25 ring-2 ring-saffron/40 shadow-sm"
+                                : "border-border bg-card hover:border-saffron/40 hover:shadow-xs",
+                              !bid && "opacity-75 cursor-default hover:border-border"
+                            )}
+                          >
+                            {/* Card Header */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h4 className="font-display text-sm font-extrabold text-navy truncate">
+                                    {item.buyer.businessName}
+                                  </h4>
+                                  <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground uppercase">
+                                    {item.buyer.businessType || "Trader"}
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 text-[11px] font-medium text-muted-foreground">
+                                  Lic: <span className="font-mono font-bold text-navy">{item.buyer.licenseNumber}</span>
+                                  {item.buyer.phone && ` · 📞 ${item.buyer.phone}`}
+                                </p>
+                              </div>
+
+                              {/* Status Badge */}
+                              <div>
+                                {isTopOffer ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-saffron px-2.5 py-0.5 text-[10px] font-black text-navy shadow-xs animate-pulse">
+                                    🏆 {hi ? "सर्वश्रेष्ठ" : "Top Offer"}
+                                  </span>
+                                ) : bid?.status === "accepted" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-leaf px-2.5 py-0.5 text-[10px] font-black text-white">
+                                    ✓ {hi ? "स्वीकृत" : "Accepted"}
+                                  </span>
+                                ) : bid?.status === "negotiating" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-navy px-2.5 py-0.5 text-[10px] font-black text-primary-foreground">
+                                    💬 {hi ? "बातचीत" : "Negotiating"}
+                                  </span>
+                                ) : bid?.status === "rejected" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-bold text-muted-foreground">
+                                    ✕ {hi ? "अस्वीकृत" : "Rejected"}
+                                  </span>
+                                ) : bid?.status === "active" ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-leaf-soft px-2.5 py-0.5 text-[10px] font-black text-leaf">
+                                    🟢 {hi ? "सक्रिय" : "Active"}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-bold text-muted-foreground">
+                                    ⏳ {hi ? "प्रतीक्षारत" : "Awaiting Bid"}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Offer Details */}
+                            {bid ? (
+                              <div className="mt-3 flex items-end justify-between border-t border-border/60 pt-3">
+                                <div>
+                                  <div className="flex items-baseline gap-1.5">
+                                    <span className="font-display text-xl font-black text-navy">
+                                      ₹{bid.bidAmount.toLocaleString("en-IN")}
+                                    </span>
+                                    <span className="text-[11px] font-medium text-muted-foreground">
+                                      /{hi ? "क्विंटल" : "qtl"}
+                                    </span>
+                                    {surplusPerQtl > 0 && (
+                                      <span className="rounded-md bg-leaf-soft px-1.5 py-0.5 text-[10px] font-black text-leaf">
+                                        +₹{surplusPerQtl}/qtl
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] font-semibold text-muted-foreground mt-0.5">
+                                    {hi ? "कुल मूल्य:" : "Total:"} ₹{(bid.bidAmount * (bid.quantityQuintals || registeredQuantity)).toLocaleString("en-IN")}
+                                  </p>
+                                </div>
+
+                                <div className="text-right">
+                                  <span className="text-[10px] font-semibold text-muted-foreground block">
+                                    {formatRelativeTime(bid.createdAt, hi)}
+                                  </span>
+                                  <span className="text-xs font-bold text-saffron group-hover:underline inline-flex items-center gap-0.5 mt-0.5">
+                                    {hi ? "बातचीत करें" : "Negotiate"} →
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-2 border-t border-border/40 pt-2 text-[11px] text-muted-foreground italic">
+                                {hi ? "यह क्रेता इस मंडी में अधिकृत है परंतु अभी कोई बोली नहीं लगाई।" : "Authorized mandi buyer. No bid placed yet."}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ─── RIGHT COLUMN: NEGOTIATION DESK & DEAL ROOM (7 cols) ─── */}
+              <div className="lg:col-span-7 space-y-4">
+                {selectedBid ? (
+                  <div className="surface-lift p-5 space-y-4">
+                    {/* Selected Buyer & Deal Header */}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-display text-lg font-black text-navy">
+                            {selectedBid.buyerName || "Buyer"}
+                          </h3>
+                          <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-bold text-navy uppercase">
+                            {selectedBuyerItem?.buyer.businessType || "Verified Buyer"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground font-medium mt-0.5">
+                          Lic: <span className="font-mono font-bold text-navy">{selectedBid.buyerLicense || selectedBuyerItem?.buyer.licenseNumber || "KRN-LIC-2026"}</span>
+                          {(selectedBid.buyerPhone || selectedBuyerItem?.buyer.phone) && (
+                            <>
+                              {" · "}
+                              <a
+                                href={`tel:${selectedBid.buyerPhone || selectedBuyerItem?.buyer.phone}`}
+                                className="font-bold text-leaf hover:underline"
+                              >
+                                📞 {selectedBid.buyerPhone || selectedBuyerItem?.buyer.phone}
+                              </a>
+                            </>
+                          )}
+                        </p>
+                      </div>
+
+                      {/* Current Offer Badge */}
+                      <div className="text-left sm:text-right bg-muted/40 rounded-xl p-3 border border-border">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                          {hi ? "वर्तमान बोली" : "Current Bid"}
+                        </span>
+                        <p className="font-display text-xl font-black text-navy">
+                          ₹{selectedBid.bidAmount.toLocaleString("en-IN")}
+                          <span className="text-xs font-normal text-muted-foreground">/{hi ? "क्विंटल" : "qtl"}</span>
+                        </p>
+                        <p className="text-[10px] font-bold text-leaf">
+                          +₹{selectedBid.bidAmount - mspRate}/qtl {hi ? "एमएसपी से ऊपर" : "above MSP"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Chat / Deal Stream Container */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-extrabold text-navy uppercase tracking-wider flex items-center gap-1.5">
+                          <span>💬</span>
+                          <span>{hi ? "लाइव बातचीत एवं मूल्य वार्ता" : "Live Deal Negotiation Stream"}</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-muted-foreground">
+                          {dealMessages.length} {hi ? "संदेश" : "messages"}
+                        </span>
+                      </div>
+
+                      <div className="h-80 overflow-y-auto space-y-3 rounded-2xl bg-muted/20 border border-border p-4">
+                        {dealMessages.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-2">
+                            <span className="text-3xl">🤝</span>
+                            <p className="font-display text-sm font-bold text-navy">
+                              {hi ? "सीधी बातचीत शुरू करें" : "Start Direct Negotiation"}
+                            </p>
+                            <p className="text-xs text-muted-foreground max-w-sm">
+                              {hi
+                                ? "क्रेता ने ₹" + selectedBid.bidAmount + "/क्विंटल की बोली लगाई है। आप नीचे से अधिक भाव का प्रस्ताव भेज सकते हैं या संदेश लिख सकते हैं।"
+                                : "The buyer has offered ₹" + selectedBid.bidAmount + "/qtl. Propose a counter-price or send a negotiation note below."}
+                            </p>
+                          </div>
+                        ) : (
+                          dealMessages.map((msg) => {
+                            const isFarmer = msg.senderRole === "farmer";
+                            return (
+                              <div
+                                key={msg.id}
+                                className={cn(
+                                  "flex flex-col max-w-[85%]",
+                                  isFarmer ? "ml-auto items-end" : "mr-auto items-start"
+                                )}
+                              >
+                                <span className="text-[10px] font-bold text-muted-foreground mb-1 px-1">
+                                  {isFarmer ? (hi ? "आप (किसान)" : "You (Farmer)") : (selectedBid.buyerName || "Buyer")}
+                                </span>
+
+                                <div
+                                  className={cn(
+                                    "rounded-2xl px-4 py-2.5 shadow-xs text-xs space-y-1.5",
+                                    isFarmer
+                                      ? "bg-saffron-soft text-navy border border-saffron/30 rounded-br-xs"
+                                      : "bg-card text-foreground border border-border rounded-bl-xs"
+                                  )}
+                                >
+                                  {/* Counter price tag if present */}
+                                  {msg.proposedPrice && (
+                                    <div className="inline-flex items-center gap-1 rounded-md bg-navy px-2 py-0.5 text-[10px] font-black text-primary-foreground">
+                                      💡 {hi ? "प्रस्तावित दर:" : "Counter Offer:"} ₹{msg.proposedPrice.toLocaleString("en-IN")}/qtl
+                                    </div>
+                                  )}
+
+                                  <p className="font-medium leading-relaxed whitespace-pre-wrap">
+                                    {msg.message}
+                                  </p>
+
+                                  <span className="block text-[9px] font-semibold text-muted-foreground text-right pt-0.5">
+                                    {formatRelativeTime(msg.createdAt, hi)}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick Reply Chips */}
+                    {activeWindow?.status === "open" && selectedBid.status !== "rejected" && (
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                          {hi ? "त्वरित भाव प्रस्ताव / त्वरित उत्तर:" : "Quick Counter-Offers & Responses:"}
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            { label: `₹${selectedBid.bidAmount + 25}/qtl`, price: selectedBid.bidAmount + 25 },
+                            { label: `₹${selectedBid.bidAmount + 50}/qtl`, price: selectedBid.bidAmount + 50 },
+                            { label: `₹${selectedBid.bidAmount + 100}/qtl`, price: selectedBid.bidAmount + 100 },
+                            { label: hi ? "FAQ ग्रेड A (नमी < 11.5%)" : "FAQ Grade A (< 11.5% moisture)", text: hi ? "मेरी फसल FAQ ग्रेड A प्रमाणित है और नमी 11.5% से भी कम है। कृपया भाव बढ़ाएँ।" : "My harvest is FAQ Grade A certified with under 11.5% moisture. Please consider increasing your rate." },
+                            { label: hi ? "स्लॉट समय पर तुरंत तुलाई" : "Ready for immediate weighing", text: hi ? "मैं निर्धारित स्लॉट पर तुलाई हेतु केंद्र पहुँच रहा हूँ। क्या आप अंतिम सौदा तय करेंगे?" : "Arriving at the centre at the scheduled window for immediate weighment." },
+                          ].map((chip, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                if (chip.price) {
+                                  setCounterPriceInput(String(chip.price));
+                                  setNewMessageText(
+                                    hi
+                                      ? `क्या आप ₹${chip.price}/क्विंटल पर सौदा तय कर सकते हैं? उपज की गुणवत्ता सर्वोत्तम है।`
+                                      : `Can you confirm the deal at ₹${chip.price}/qtl? Harvest quality is top grade.`
+                                  );
+                                } else if (chip.text) {
+                                  setNewMessageText(chip.text);
+                                }
+                              }}
+                              className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] font-bold text-navy hover:bg-muted hover:border-saffron/50 transition-all shadow-xs"
+                            >
+                              + {chip.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Message & Counter-Price Form */}
+                    {activeWindow?.status === "open" && selectedBid.status !== "rejected" && selectedBid.status !== "accepted" ? (
+                      <form onSubmit={handleSendMessage} className="space-y-3 border-t border-border pt-4">
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <div className="w-full sm:w-44 shrink-0">
+                            <label className="block text-[10px] font-bold text-muted-foreground uppercase mb-1">
+                              {hi ? "प्रस्तावित दर (₹/क्विंटल)" : "Counter Rate (₹/qtl)"}
+                            </label>
+                            <input
+                              type="number"
+                              min={mspRate}
+                              step="5"
+                              placeholder={`e.g. ${selectedBid.bidAmount + 30}`}
+                              value={counterPriceInput}
+                              onChange={(e) => setCounterPriceInput(e.target.value)}
+                              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-navy focus-ring"
+                            />
+                          </div>
+
+                          <div className="flex-1">
+                            <label className="block text-[10px] font-bold text-muted-foreground uppercase mb-1">
+                              {hi ? "संदेश / टिप्पणी" : "Message / Note to Buyer"}
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                placeholder={hi ? "क्रेता को संदेश लिखें..." : "Type your message to this buyer..."}
+                                value={newMessageText}
+                                onChange={(e) => setNewMessageText(e.target.value)}
+                                className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus-ring"
+                              />
+                              <button
+                                type="submit"
+                                disabled={isSendingMessage || (!newMessageText.trim() && !counterPriceInput)}
+                                className="shrink-0 rounded-xl bg-navy px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-navy/90 transition-all disabled:opacity-50 focus-ring"
+                              >
+                                {isSendingMessage ? "..." : (hi ? "भेजें 📤" : "Send 📤")}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </form>
+                    ) : null}
+
+                    {/* Deal Decision Action Bar */}
+                    <div className="border-t border-border pt-4">
+                      {selectedBid.status === "accepted" ? (
+                        <div className="rounded-2xl border-2 border-leaf/40 bg-leaf-soft/40 p-4 text-center space-y-2">
+                          <span className="text-3xl">🎉</span>
+                          <h4 className="font-display text-base font-black text-leaf">
+                            {hi ? "सौदा सफलतापूर्वक स्वीकृत!" : "Deal Successfully Accepted!"}
+                          </h4>
+                          <p className="text-xs text-navy font-semibold">
+                            {selectedBid.buyerName} {hi ? "के साथ" : "with"} ₹{selectedBid.bidAmount.toLocaleString("en-IN")}/{hi ? "क्विंटल पर खरीद तय हुई है।" : "qtl confirmed."}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground font-medium">
+                            {hi ? "निर्धारित समय पर डिजिटल गेट पास के साथ केंद्र पहुँचे।" : "Please arrive at the centre during your booked window with your Digital Gate Pass."}
+                          </p>
+                        </div>
+                      ) : selectedBid.status === "rejected" ? (
+                        <div className="rounded-2xl border border-muted bg-muted/40 p-4 text-center">
+                          <p className="text-xs font-bold text-muted-foreground">
+                            ✕ {hi ? "यह बोली अस्वीकार कर दी गई है।" : "This bid has been rejected."}
+                          </p>
+                        </div>
+                      ) : activeWindow?.status === "open" ? (
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                          <div className="w-full sm:w-auto">
+                            <button
+                              type="button"
+                              onClick={() => setShowAcceptConfirmModal(selectedBid)}
+                              disabled={Boolean(isAcceptingBid)}
+                              className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-leaf px-6 py-3 text-xs font-extrabold text-white shadow-md hover:bg-leaf/90 transition-all focus-ring"
+                            >
+                              <span>🤝</span>
+                              <span>
+                                {isAcceptingBid === selectedBid.id
+                                  ? (hi ? "स्वीकार किया जा रहा है..." : "Locking Deal...")
+                                  : (hi ? `सौदा स्वीकार करें (₹${selectedBid.bidAmount.toLocaleString("en-IN")}/क्विंटल)` : `Accept Deal (₹${selectedBid.bidAmount.toLocaleString("en-IN")}/qtl)`)}
+                              </span>
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleRejectBid(selectedBid.id)}
+                              disabled={Boolean(isRejectingBid)}
+                              className="rounded-xl border border-danger/30 bg-card px-4 py-2.5 text-xs font-bold text-danger hover:bg-danger-soft transition-all"
+                            >
+                              {isRejectingBid === selectedBid.id ? "..." : (hi ? "✕ बोली अस्वीकार करें" : "✕ Reject Bid")}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  /* When no bid is selected */
+                  <div className="surface-lift p-12 text-center space-y-3">
+                    <span className="text-4xl">👈</span>
+                    <h3 className="font-display text-base font-bold text-navy">
+                      {hi ? "बातचीत शुरू करने के लिए कोई बोली चुनें" : "Select a Bid to Start Negotiating"}
+                    </h3>
+                    <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                      {hi
+                        ? "बाईं सूची में से किसी अधिकृत क्रेता पर क्लिक करें ताकि आप उनके साथ सीधे भाव का मोलतोल कर सकें।"
+                        : "Click any buyer or active bid on the left to open the direct negotiation stream and submit counter-offers."}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1666,6 +2520,87 @@ export function FarmerPortal() {
             >
               🖨️ Print / Download Official Receipt
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: DEAL ACCEPTANCE CONFIRMATION MODAL ─── */}
+      {showAcceptConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="relative w-full max-w-lg rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-5 animate-rise">
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-10 items-center justify-center rounded-2xl bg-leaf text-xl text-white shadow-xs">
+                  🤝
+                </span>
+                <div>
+                  <h3 className="font-display text-lg font-black text-navy">
+                    {hi ? "सौदा पुष्टि एवं अंतिम स्वीकृति" : "Finalize & Lock Deal"}
+                  </h3>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {hi ? "मंडी क्रेता के साथ आधिकारिक खरीद समझौता" : "Official Mandi Procurement Agreement"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAcceptConfirmModal(null)}
+                className="flex size-8 items-center justify-center rounded-lg border border-border text-xs font-bold text-muted-foreground hover:text-navy"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Deal Breakdown */}
+            <div className="rounded-2xl border border-leaf/30 bg-leaf-soft/30 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted-foreground uppercase">{hi ? "क्रेता:" : "Buyer:"}</span>
+                <span className="font-display text-sm font-extrabold text-navy">{showAcceptConfirmModal.buyerName || "Authorized Buyer"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted-foreground uppercase">{hi ? "फसल एवं मात्रा:" : "Crop & Quantity:"}</span>
+                <span className="font-display text-sm font-bold text-navy">{registeredCropHi} · {registeredQuantity} {hi ? "क्विंटल" : "Quintals"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted-foreground uppercase">{hi ? "स्वीकृत दर:" : "Agreed Rate:"}</span>
+                <span className="font-display text-base font-black text-leaf">₹{showAcceptConfirmModal.bidAmount.toLocaleString("en-IN")} / {hi ? "क्विंटल" : "qtl"}</span>
+              </div>
+              <div className="border-t border-leaf/20 pt-2 flex items-center justify-between">
+                <span className="text-xs font-bold text-navy uppercase">{hi ? "कुल बिक्री मूल्य:" : "Total Gross Value:"}</span>
+                <span className="font-display text-lg font-black text-navy">₹{(showAcceptConfirmModal.bidAmount * registeredQuantity).toLocaleString("en-IN")}</span>
+              </div>
+              {showAcceptConfirmModal.bidAmount > mspRate && (
+                <div className="flex items-center justify-between text-xs font-extrabold text-leaf">
+                  <span>{hi ? "एमएसपी से अतिरिक्त शुद्ध लाभ:" : "Extra Net Profit Over MSP:"}</span>
+                  <span>+₹{((showAcceptConfirmModal.bidAmount - mspRate) * registeredQuantity).toLocaleString("en-IN")}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl bg-muted/50 p-3 text-[11px] font-medium text-muted-foreground leading-relaxed">
+              ⚠️ {hi
+                ? "इस सौदे को स्वीकार करने पर यह बोली अंतिम रूप से स्वीकृत हो जाएगी और अन्य सभी बोलियाँ स्वतः समाप्त हो जाएँगी। आपका डिजिटल गेट पास और निर्धारित स्लॉट सुरक्षित रहेगा।"
+                : "Accepting will lock this deal and automatically decline all other competing bids. Your gate pass, scheduled slot, and certified electronic weighment remain fully reserved."}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handleAcceptBid(showAcceptConfirmModal)}
+                disabled={Boolean(isAcceptingBid)}
+                className="flex-1 rounded-xl bg-leaf py-3 text-xs font-extrabold text-white hover:bg-leaf/90 transition-all shadow-md focus-ring"
+              >
+                {isAcceptingBid ? "..." : (hi ? "✓ हाँ, सौदा पक्का करें" : "✓ Confirm & Lock Deal")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAcceptConfirmModal(null)}
+                className="rounded-xl border border-border bg-card px-5 py-3 text-xs font-bold text-muted-foreground hover:text-navy focus-ring"
+              >
+                {hi ? "रद्द करें / बातचीत जारी रखें" : "Cancel / Keep Negotiating"}
+              </button>
+            </div>
           </div>
         </div>
       )}

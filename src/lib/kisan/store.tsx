@@ -18,6 +18,7 @@ import {
 import {
   analyticsService,
   auditService,
+  biddingService,
   centreService,
   farmerService,
   DEFAULT_FORECAST_POINTS,
@@ -41,6 +42,8 @@ import type {
   ActivityEvent,
   AiRecommendation,
   AnomalyDetection,
+  Bid,
+  BiddingWindow,
   CentreAlert,
   CongestionPrediction,
   DistrictSummary,
@@ -84,6 +87,9 @@ interface KisanState {
   anomalies: AnomalyDetection[];
   congestionPredictions: CongestionPrediction[];
   interventionApplied: boolean;
+  /** Bidding system state */
+  biddingWindows: BiddingWindow[];
+  farmerBids: Bid[];
   isLoading: boolean;
   error: string | null;
 }
@@ -105,6 +111,7 @@ interface KisanActions {
   deleteNotification: (notifId: string) => Promise<void>;
   sendNotification: (title: string, body: string, targetUserId?: string) => Promise<void>;
   refreshIntelligence: () => Promise<void>;
+  refreshBiddingWindows: () => Promise<void>;
 }
 
 interface KisanContextValue extends KisanState, KisanActions {
@@ -132,6 +139,8 @@ const emptyState: KisanState = {
   anomalies: [],
   congestionPredictions: [],
   interventionApplied: false,
+  biddingWindows: [],
+  farmerBids: [],
   isLoading: true,
   error: null,
 };
@@ -292,6 +301,34 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           isLoading: false,
           error: null,
         }));
+      } else if (role === "buyer") {
+        // BUYER: assigned centre, open bidding windows, buyer's own bids, notifications
+        const effectiveCentreId = centreId || "";
+        const results = await Promise.allSettled([
+          effectiveCentreId ? centreService.getById(effectiveCentreId) : centreService.list(), // 0
+          effectiveCentreId ? biddingService.getWindowsForBuyer(effectiveCentreId) : Promise.resolve([]), // 1
+          activeUserId ? biddingService.getBidsByBuyer(activeUserId) : Promise.resolve([]), // 2
+          notificationsP, // 3
+        ]);
+
+        const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+          r.status === "fulfilled" ? r.value : fallback;
+
+        const centreResult = results[0];
+        let centres: ProcurementCentre[] = [];
+        if (centreResult.status === "fulfilled") {
+          centres = Array.isArray(centreResult.value) ? centreResult.value : [centreResult.value as ProcurementCentre];
+        }
+
+        setState((s) => ({
+          ...s,
+          centres,
+          biddingWindows: val(results[1], s.biddingWindows),
+          farmerBids: val(results[2], s.farmerBids) as any,
+          notifications: val(results[3], s.notifications),
+          isLoading: false,
+          error: null,
+        }));
       } else {
         // Not authenticated or unknown role — load minimal public data
         const results = await Promise.allSettled([centreService.list()]);
@@ -351,6 +388,23 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       console.warn("Failed to refresh intelligence:", err);
     }
   }, []);
+
+  /** Refresh bidding windows (buyer/farmer) */
+  const refreshBiddingWindows = useCallback(async () => {
+    try {
+      const role = user?.role;
+      if (role === "buyer" && user?.centreId) {
+        const biddingWindows = await biddingService.getWindowsForBuyer(user.centreId);
+        const farmerBids = await biddingService.getBidsByBuyer(user.id);
+        setState((s) => ({ ...s, biddingWindows, farmerBids: farmerBids as any }));
+      } else if (role === "farmer" && user?.id) {
+        const biddingWindows = await biddingService.getWindowsForFarmer(user.id);
+        setState((s) => ({ ...s, biddingWindows }));
+      }
+    } catch (err) {
+      console.warn("Failed to refresh bidding windows:", err);
+    }
+  }, [user?.role, user?.centreId, user?.id]);
 
   // Initial load + realtime subscriptions
   useEffect(() => {
@@ -466,12 +520,39 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       });
     }
 
+    // Bidding windows realtime (buyer + farmer)
+    if (role === "buyer" || role === "farmer") {
+      channelBuilder.on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "bidding_windows",
+      }, () => {
+        refreshBiddingWindows();
+      });
+
+      channelBuilder.on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "bids",
+      }, () => {
+        refreshBiddingWindows();
+      });
+
+      channelBuilder.on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "deal_messages",
+      }, () => {
+        refreshBiddingWindows();
+      });
+    }
+
     channelBuilder.subscribe();
 
     return () => {
       supabase.removeChannel(channelBuilder);
     };
-  }, [refreshFromDatabase, refreshCentres, refreshQueue, user]);
+  }, [refreshFromDatabase, refreshCentres, refreshQueue, refreshBiddingWindows, user]);
 
   // ─── Actions ───
 
@@ -641,6 +722,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       markAllNotificationsRead,
       deleteNotification,
       sendNotification,
+      refreshBiddingWindows,
       summary,
       centreById: (id: string) => centres.find((c) => c.id === id || c.code === id),
       recommendedCentre: centres.find((c) => c.recommended),
@@ -648,7 +730,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
   }, [
     state, setLanguage, toggleLanguage,
     reviewRecommendation, approveRecommendation, overrideRecommendation,
-    refreshFromDatabase, refreshCentres, refreshQueue, refreshIntelligence,
+    refreshFromDatabase, refreshCentres, refreshQueue, refreshIntelligence, refreshBiddingWindows,
     updateFarmerProfile, operatorProcessTicket, operatorUpdateCounters,
     markNotificationRead, markAllNotificationsRead, deleteNotification, sendNotification,
   ]);

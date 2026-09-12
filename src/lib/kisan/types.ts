@@ -8,7 +8,7 @@
 export type Language = "hi" | "en";
 
 /** Matches the canonical roles in `profiles.role` and Supabase auth */
-export type Role = "farmer" | "centre_operator" | "district_admin" | "super_admin";
+export type Role = "farmer" | "centre_operator" | "district_admin" | "super_admin" | "buyer";
 
 export type CentreHealth = "green" | "yellow" | "red";
 
@@ -313,3 +313,78 @@ export interface ProcurementTarget {
   season: string;
   progressPct: number;
 }
+
+// ─── Buyer & Bidding Types ───
+
+export type BuyerBusinessType = "trader" | "processor" | "exporter" | "miller" | "cooperative";
+
+export interface Buyer {
+  id: string;
+  userId: string;
+  businessName: string;
+  businessType: BuyerBusinessType;
+  licenseNumber: string;
+  centreId: string;
+  isActive: boolean;
+  phone?: string;
+  createdAt?: string;
+}
+
+export type BiddingWindowStatus = "open" | "accepted" | "expired" | "cancelled";
+
+export interface BiddingWindow {
+  id: string;
+  ticketId: string;
+  farmerId: string;
+  centreId: string;
+  crop: string;
+  quantityQuintals: number;
+  mspRate: number;
+  status: BiddingWindowStatus;
+  acceptedBidId: string | null;
+  acceptedBuyerId: string | null;
+  opensAt: string;
+  closesAt: string;
+  createdAt?: string;
+  /** Joined fields (not in DB — populated by service layer) */
+  farmerName?: string;
+  centreName?: string;
+  highestBid?: number;
+  totalBids?: number;
+}
+
+export type BidStatus = "active" | "negotiating" | "outbid" | "accepted" | "rejected" | "withdrawn";
+
+export interface Bid {
+  id: string;
+  windowId: string;
+  buyerId: string;
+  bidAmount: number;
+  quantityQuintals: number;
+  status: BidStatus;
+  createdAt: string;
+  updatedAt: string;
+  /** Joined fields (not in DB — populated by service layer) */
+  buyerName?: string;
+  buyerBusiness?: string;
+  buyerPhone?: string;
+  buyerLicense?: string;
+}
+
+export interface DealMessage {
+  id: string;
+  bidId: string;
+  windowId: string;
+  senderId: string;
+  senderRole: "farmer" | "buyer";
+  message: string;
+  proposedPrice?: number | null;
+  proposedQuantity?: number | null;
+  createdAt: string;
+}
+
+export interface MandiBuyerWithBid {
+  buyer: Buyer;
+  bid?: Bid | undefined;
+}
+

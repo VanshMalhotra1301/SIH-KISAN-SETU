@@ -167,6 +167,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let ifscCode: string | null = null;
       let landArea: number | null = null;
       let aadhaarNumber: string | null = null;
+      let businessName: string | null = null;
+      let businessType: string | null = null;
+      let licenseNumber: string | null = null;
 
       if (payload.role === "farmer") {
         village = payload.village || "";
@@ -178,11 +181,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         landArea = payload.landAreaAcres ?? null;
         aadhaarNumber = payload.aadhaarNumber || null;
       } else if (payload.role === "centre_operator") {
-        centreId = payload.centreId;
+        centreId = payload.centreId || null;
       } else if (payload.role === "district_admin") {
         department = payload.department || "District Agriculture Office";
       } else if (payload.role === "super_admin") {
         department = payload.department || "State Directorate of Agriculture";
+      } else if (payload.role === "buyer") {
+        centreId = payload.centreId || null;
+        businessName = payload.businessName || "Unnamed Business";
+        businessType = payload.businessType || "trader";
+        licenseNumber = payload.licenseNumber || "";
       }
 
       // 1. Call secure register_user_account RPC
@@ -203,6 +211,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         p_ifsc_code: ifscCode,
         p_land_area: landArea,
         p_aadhaar_number: aadhaarNumber,
+        p_business_name: businessName,
+        p_business_type: businessType,
+        p_license_number: licenseNumber,
       });
 
       if (rpcError) {

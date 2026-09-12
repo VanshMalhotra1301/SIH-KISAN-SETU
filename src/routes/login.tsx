@@ -7,6 +7,7 @@ import {
   ROLE_LABELS,
   ROLE_PORTALS,
   type SignUpAdminPayload,
+  type SignUpBuyerPayload,
   type SignUpFarmerPayload,
   type SignUpOperatorPayload,
   type SignUpSuperAdminPayload,
@@ -60,6 +61,11 @@ export function LoginPage() {
   const [quantity, setQuantity] = useState("120");
   const [selectedCentreId, setSelectedCentreId] = useState("");
   const [department, setDepartment] = useState("");
+
+  // Buyer-specific state
+  const [businessName, setBusinessName] = useState("");
+  const [businessType, setBusinessType] = useState("trader");
+  const [licenseNumber, setLicenseNumber] = useState("");
 
   // Farmer Bank & Land state
   const [bankName, setBankName] = useState("");
@@ -176,6 +182,22 @@ export function LoginPage() {
         } as SignUpSuperAdminPayload;
       }
 
+      if (signupRole === "buyer") {
+        payload = {
+          role: "buyer" as const,
+          email: signupEmail,
+          password: signupPassword,
+          fullName,
+          fullNameHi: fullName,
+          phone,
+          district: district.trim(),
+          centreId: selectedCentreId || centres[0]?.id || "",
+          businessName: businessName.trim() || "Unnamed Business",
+          businessType: businessType || "trader",
+          licenseNumber: licenseNumber.trim() || undefined,
+        } as SignUpBuyerPayload;
+      }
+
       const res = await signUp(payload);
       if (res.user) {
         const dest = ROLE_PORTALS[res.user.role] || "/farmer";
@@ -236,6 +258,13 @@ export function LoginPage() {
       labelEn: "Super Admin",
       labelHi: "सुपर एडमिन",
       desc: "Statewide oversight, policies & audits",
+    },
+    {
+      role: "buyer",
+      icon: "🏪",
+      labelEn: "Buyer",
+      labelHi: "क्रेता",
+      desc: "Bid on farmer produce at your mandi",
     },
   ];
 
@@ -726,6 +755,74 @@ export function LoginPage() {
                       className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
                     />
                   </div>
+                )}
+
+                {/* 5. Buyer-specific fields */}
+                {signupRole === "buyer" && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        {hi ? "व्यापार / कंपनी का नाम" : "Business / Company Name"}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={businessName}
+                        onChange={(e) => setBusinessName(e.target.value)}
+                        placeholder="e.g. Sharma Traders Pvt Ltd"
+                        className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
+                      />
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          {hi ? "व्यापार प्रकार" : "Business Type"}
+                        </label>
+                        <select
+                          value={businessType}
+                          onChange={(e) => setBusinessType(e.target.value)}
+                          className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
+                        >
+                          <option value="trader">{hi ? "व्यापारी (Trader)" : "Trader"}</option>
+                          <option value="processor">{hi ? "प्रसंस्करणकर्ता (Processor)" : "Processor"}</option>
+                          <option value="exporter">{hi ? "निर्यातक (Exporter)" : "Exporter"}</option>
+                          <option value="miller">{hi ? "मिलर (Miller)" : "Miller"}</option>
+                          <option value="cooperative">{hi ? "सहकारी (Cooperative)" : "Cooperative"}</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          {hi ? "APMC / व्यापार लाइसेंस नंबर" : "APMC / Trade License No."}
+                        </label>
+                        <input
+                          type="text"
+                          value={licenseNumber}
+                          onChange={(e) => setLicenseNumber(e.target.value)}
+                          placeholder="e.g. APMC-KRN-2024-1234"
+                          className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        {hi ? "नियुक्त खरीद केंद्र / मंडी" : "Assigned Procurement Centre / Mandi"}
+                      </label>
+                      <select
+                        value={selectedCentreId}
+                        onChange={(e) => setSelectedCentreId(e.target.value)}
+                        className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold text-navy focus-ring"
+                      >
+                        {centres.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.code} — {hi ? c.nameHi : c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
                 )}
 
                 <button
