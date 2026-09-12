@@ -288,10 +288,15 @@ function OverviewTab({ hi, centres, forecast, recommendation, recSt, alerts, act
       {/* Left: Map + Forecast */}
       <div className="space-y-6">
         <section className="relative">
-          <SectionLabel tone="light">{hi ? "जिला केंद्र स्वास्थ्य" : "District centre health"}</SectionLabel>
-          <h2 className="mt-2 font-display text-xl font-extrabold text-navy">
-            {hi ? "लाइव सेंटर मैप" : "Live centre map"}
-          </h2>
+          <SectionLabel tone="light">{hi ? "जिला खरीद एवं लाइव संचालन" : "District Procurement & Live Telemetry"}</SectionLabel>
+          <div className="mt-2 mb-1 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
+            <h2 className="font-display text-xl font-extrabold text-navy">
+              {hi ? "रीयल-टाइम मंडी संचालन व विश्लेषण" : "Real-Time Mandi Operations & Analytics"}
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              {hi ? "लाइव डेटाबेस टेलीमेट्री: कतार चरण, नमी व DBT भुगतान" : "Live database telemetry: queue stages, grain quality & DBT"}
+            </span>
+          </div>
           <div className="mt-4">
             {centres.length === 0 && (
               <div className="absolute inset-x-0 top-1/2 z-10 flex -translate-y-1/2 justify-center px-4">
@@ -313,17 +318,6 @@ function OverviewTab({ hi, centres, forecast, recommendation, recSt, alerts, act
           </h3>
           <div className="mt-4">
             <ForecastChart data={forecast} tone="light" />
-          </div>
-          <div className="mt-3 flex gap-4 text-xs font-semibold text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block size-2 rounded-full bg-leaf" /> {hi ? "वास्तविक" : "Actual"}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block size-2 rounded-full bg-navy" /> {hi ? "अनुमानित" : "Predicted"}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-danger" /> {hi ? "सुरक्षित क्षमता" : "Safe capacity"}
-            </span>
           </div>
         </section>
       </div>

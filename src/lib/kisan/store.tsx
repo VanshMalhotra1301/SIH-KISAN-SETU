@@ -229,6 +229,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           notificationsP,                                     // 7
           intelligenceService.detectAnomalies(),              // 8
           intelligenceService.predictCongestion(),            // 9
+          queueService.getAllQueue(),                         // 10
         ]);
 
         const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
@@ -248,6 +249,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           notifications: val(results[7], s.notifications),
           anomalies: val(results[8], s.anomalies),
           congestionPredictions: val(results[9], s.congestionPredictions),
+          queueRows: val(results[10], s.queueRows),
           interventionApplied: rec?.status === "approved",
           isLoading: false,
           error: null,
@@ -265,6 +267,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           notificationsP,                                     // 7
           intelligenceService.detectAnomalies(),              // 8
           intelligenceService.predictCongestion(),            // 9
+          queueService.getAllQueue(),                         // 10
         ]);
 
         const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
@@ -284,6 +287,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           notifications: val(results[7], s.notifications),
           anomalies: val(results[8], s.anomalies),
           congestionPredictions: val(results[9], s.congestionPredictions),
+          queueRows: val(results[10], s.queueRows),
           interventionApplied: rec?.status === "approved",
           isLoading: false,
           error: null,

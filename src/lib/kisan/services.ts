@@ -780,14 +780,21 @@ export const forecastService = {
   queueForecast: async (centreId?: string): Promise<ForecastPoint[]> => {
     try {
       let query = supabase.from("forecast_points").select("*");
-      if (centreId) query = query.eq("centre_id", centreId);
+      if (centreId) {
+        query = query.eq("centre_id", centreId);
+      } else {
+        const { data: firstCentre } = await supabase.from("procurement_centres").select("id").order("code").limit(1).maybeSingle();
+        if (firstCentre?.id) {
+          query = query.eq("centre_id", firstCentre.id);
+        }
+      }
       const { data, error } = await query.order("hour_label");
       if (error || !data || data.length === 0) return DEFAULT_FORECAST_POINTS;
       return data.map((p) => ({
         label: p.hour_label,
         queue: p.queue_actual ?? 0,
         predicted: p.queue_predicted ?? 0,
-        capacityLine: p.capacity_line ?? 35,
+        capacityLine: p.capacity_line ?? 55,
       }));
     } catch {
       return DEFAULT_FORECAST_POINTS;
