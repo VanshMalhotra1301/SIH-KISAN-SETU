@@ -213,27 +213,75 @@ function MarketplaceTab({
   hi: boolean;
   onBidPlaced: () => void;
 }) {
+  const [isGeneratingLot, setIsGeneratingLot] = useState(false);
+
+  const handleGenerateDemoLot = async () => {
+    if (!centreId) return;
+    setIsGeneratingLot(true);
+    try {
+      await biddingService.generateDemoLot(centreId);
+      onBidPlaced();
+    } catch (err: any) {
+      alert(err.message || "Failed to generate lot");
+    } finally {
+      setIsGeneratingLot(false);
+    }
+  };
+
   if (windows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-muted py-16">
+      <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-muted p-10 text-center space-y-4">
         <span className="text-5xl">🌾</span>
-        <p className="mt-4 font-display text-lg font-bold text-navy">
-          {hi ? "अभी कोई सक्रिय बोली विंडो नहीं" : "No Active Bidding Windows"}
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {hi
-            ? "जब किसान आपकी मंडी में स्लॉट बुक करेंगे, उनकी फसल यहाँ दिखेगी।"
-            : "When farmers book slots at your mandi, their produce will appear here."}
-        </p>
+        <div className="space-y-1">
+          <p className="font-display text-lg font-bold text-navy">
+            {hi ? "आपकी मंडी में अभी कोई सक्रिय बोली विंडो नहीं है" : "No Active Produce Lots at Your Mandi"}
+          </p>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+            {hi
+              ? "जैसे ही किसान आपकी नियुक्त मंडी में स्लॉट बुक करेंगे, उनकी उपज की नीलामी विंडो यहाँ स्वतः दिखाई देगी। परीक्षण या डेमो हेतु आप तुरंत नया लॉट बना सकते हैं।"
+              : "When registered farmers book entry slots at your assigned mandi, their live bidding windows appear here automatically. You can also generate an active demo lot right now to test placing bids."}
+          </p>
+        </div>
+
+        {centreId && (
+          <button
+            type="button"
+            onClick={handleGenerateDemoLot}
+            disabled={isGeneratingLot}
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-saffron to-leaf px-5 py-3 text-xs font-black text-white shadow-md hover:opacity-95 transition-all focus-ring disabled:opacity-50"
+          >
+            <span>✨</span>
+            <span>
+              {isGeneratingLot
+                ? (hi ? "लॉट तैयार हो रहा है..." : "Generating Lot...")
+                : (hi ? "🌾 इस मंडी के लिए सक्रिय किसान लॉट बनाएँ (Demo)" : "🌾 Generate Active Farmer Lot (Demo)")}
+            </span>
+          </button>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <SectionLabel>
-        🏪 {hi ? "बाज़ार — सक्रिय बोली विंडो" : "Marketplace — Active Bidding Windows"}
-      </SectionLabel>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <SectionLabel>
+          🏪 {hi ? "बाज़ार — सक्रिय बोली विंडो" : "Marketplace — Active Bidding Windows"}
+        </SectionLabel>
+
+        {centreId && (
+          <button
+            type="button"
+            onClick={handleGenerateDemoLot}
+            disabled={isGeneratingLot}
+            className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-navy hover:bg-muted transition-all shadow-xs"
+          >
+            <span>+</span>
+            <span>{isGeneratingLot ? "..." : (hi ? "नया डेमो लॉट जोड़ें" : "Add Demo Lot")}</span>
+          </button>
+        )}
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {windows.map((w) => (
           <BiddingWindowCard

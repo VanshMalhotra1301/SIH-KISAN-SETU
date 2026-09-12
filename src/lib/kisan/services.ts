@@ -2156,4 +2156,14 @@ export const biddingService = {
       targetId: bidId,
     });
   },
+
+  /** Generate a live demo farmer produce lot for testing at an assigned mandi */
+  generateDemoLot: async (centreId: string): Promise<string> => {
+    if (!centreId) throw new Error("Missing centreId");
+    const { data, error } = await supabase.rpc("generate_demo_lot_for_centre", {
+      p_centre_id: centreId,
+    });
+    if (error) throw new Error(`Failed to generate demo lot: ${error.message}`);
+    return data as string;
+  },
 };
