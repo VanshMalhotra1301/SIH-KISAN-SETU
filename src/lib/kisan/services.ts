@@ -399,6 +399,7 @@ export const slotService = {
           confidencePct: mySlot.confidence_pct || 0,
           reason: mySlot.reason || "",
           reasonHi: mySlot.reason_hi || "",
+          isBooked: Boolean(mySlot.is_booked),
         };
       }
     }
@@ -424,6 +425,7 @@ export const slotService = {
       confidencePct: data.confidence_pct || 0,
       reason: data.reason || "",
       reasonHi: data.reason_hi || "",
+      isBooked: Boolean(data.is_booked),
     };
   },
 
@@ -444,6 +446,27 @@ export const slotService = {
       confidencePct: s.confidence_pct || 0,
       reason: s.reason || "",
       reasonHi: s.reason_hi || "",
+      isBooked: Boolean(s.is_booked),
+    }));
+  },
+
+  /** List all available unbooked slots across all centres */
+  listAllAvailable: async (): Promise<SlotSuggestion[]> => {
+    const { data, error } = await supabase
+      .from("slots")
+      .select("*")
+      .eq("is_booked", false)
+      .order("created_at");
+    if (error) throw new Error(`Failed to load all available slots: ${error.message}`);
+    return (data || []).map((s) => ({
+      id: s.id,
+      centreId: s.centre_id,
+      window: s.window,
+      date: s.date,
+      confidencePct: s.confidence_pct || 0,
+      reason: s.reason || "",
+      reasonHi: s.reason_hi || "",
+      isBooked: Boolean(s.is_booked),
     }));
   },
 

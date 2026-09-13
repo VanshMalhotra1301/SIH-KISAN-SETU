@@ -13,8 +13,10 @@ import { AuthGuard } from "@/components/kisan/auth-guard";
 import { CapacityBar, HealthDot, Pill, SectionLabel } from "@/components/kisan/primitives";
 import { VoiceAssistant } from "@/components/kisan/voice-assistant";
 import { DigitalGatePass, SvgQrCode, type GatePassDetails } from "@/components/kisan/digital-gate-pass";
+import { SmartRecommendationsCard } from "@/components/kisan/smart-recommendations";
 import { useAuth } from "@/hooks/use-auth";
 import { centreHealth, useKisan } from "@/lib/kisan/store";
+import type { CentreSlotCandidate } from "@/lib/kisan/recommendation-engine";
 import {
   centreService,
   farmerService,
@@ -109,6 +111,9 @@ export function FarmerPortal() {
     refreshFromDatabase,
     biddingWindows,
     refreshBiddingWindows,
+    smartRecommendations,
+    top3Recommendations,
+    refreshRecommendations,
   } = useKisan();
   const hi = language === "hi";
 
@@ -120,6 +125,20 @@ export function FarmerPortal() {
   const [availableSlots, setAvailableSlots] = useState<SlotSuggestion[]>([]);
   const [bookingInProgress, setBookingInProgress] = useState(false);
   const [farmerGrievances, setFarmerGrievances] = useState<Grievance[]>([]);
+
+  // Handler for selecting a Smart Multi-Objective recommendation
+  const handleSelectRecommendedCandidate = (cand: CentreSlotCandidate) => {
+    setSelectedCentre(cand.centre);
+    setBookingCentre(cand.centre);
+    setSelectedSlotWindow(cand.slotWindow);
+    slotService.listAvailable(cand.centreId).then((slots) => {
+      setAvailableSlots(slots);
+      setActiveTab("centres");
+      window.scrollTo({ top: 400, behavior: "smooth" });
+    }).catch(() => {
+      setActiveTab("centres");
+    });
+  };
 
   // Search & Filter state for centres
   const [centreSearchQuery, setCentreSearchQuery] = useState("");
@@ -968,8 +987,15 @@ export function FarmerPortal() {
           {/* AI Sahayak Voice Companion Card */}
           <VoiceAssistant currentTab={activeTab} onNavigateTab={(tab) => setActiveTab(tab as FarmerTab)} onExecuteAction={handleSahayakAction} />
 
-          {/* Recommended Centre Snapshot */}
-          {recommendedCentre && (
+          {/* Smart Centre + Smart Time Recommendation Engine Widget */}
+          {top3Recommendations && top3Recommendations.length > 0 ? (
+            <SmartRecommendationsCard
+              smartRecommendations={smartRecommendations}
+              top3={top3Recommendations}
+              isHindi={hi}
+              onSelectOption={handleSelectRecommendedCandidate}
+            />
+          ) : recommendedCentre ? (
             <section className="surface-lift p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -996,7 +1022,7 @@ export function FarmerPortal() {
                 </button>
               </div>
             </section>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -1005,6 +1031,16 @@ export function FarmerPortal() {
       ══════════════════════════════════════════════════════════════ */}
       {activeTab === "centres" && (
         <div className="mt-6 space-y-6">
+          {/* Smart Centre + Smart Time Recommendation Engine Banner */}
+          {top3Recommendations && top3Recommendations.length > 0 && (
+            <SmartRecommendationsCard
+              smartRecommendations={smartRecommendations}
+              top3={top3Recommendations}
+              isHindi={hi}
+              onSelectOption={handleSelectRecommendedCandidate}
+            />
+          )}
+
           <div className="surface-lift p-5 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
@@ -1169,12 +1205,21 @@ export function FarmerPortal() {
               const isRecommended = c.recommended;
               const health = centreHealth(c.capacityUsedPct);
 
+              const matchRank = top3Recommendations?.findIndex((r) => r.centreId === c.id) ?? -1;
+              const recCandidate = matchRank >= 0 ? top3Recommendations[matchRank] : null;
+
               return (
                 <div
                   key={c.id}
                   className={cn(
                     "surface-lift p-5 space-y-4 border-2 transition-all",
-                    isRecommended ? "border-leaf/70 shadow-md" : "border-border hover:border-leaf/40"
+                    matchRank === 0
+                      ? "border-leaf shadow-md shadow-leaf/10 ring-1 ring-leaf/20"
+                      : matchRank === 1
+                      ? "border-navy/60 shadow-sm"
+                      : matchRank === 2
+                      ? "border-amber-500/50"
+                      : "border-border hover:border-leaf/40"
                   )}
                 >
                   <div className="flex items-start justify-between">
@@ -1184,9 +1229,19 @@ export function FarmerPortal() {
                           {c.code}
                         </span>
                         <h3 className="font-display text-base font-extrabold text-navy">{c.name}</h3>
-                        {isRecommended && (
-                          <span className="rounded-full bg-leaf px-2 py-0.5 text-[9px] font-black text-white">
-                            ⭐ AI BEST MATCH
+                        {matchRank === 0 && (
+                          <span className="rounded-full bg-leaf px-2.5 py-0.5 text-[9px] font-black text-white shadow-xs">
+                            {hi ? "⭐ #1 सबसे सही विकल्प" : "⭐ #1 BEST MATCH"}
+                          </span>
+                        )}
+                        {matchRank === 1 && (
+                          <span className="rounded-full bg-navy px-2.5 py-0.5 text-[9px] font-black text-white shadow-xs">
+                            {hi ? "🥈 #2 दूसरा विकल्प" : "🥈 #2 2ND OPTION"}
+                          </span>
+                        )}
+                        {matchRank === 2 && (
+                          <span className="rounded-full bg-amber-600 px-2.5 py-0.5 text-[9px] font-black text-white shadow-xs">
+                            {hi ? "🥉 #3 तीसरा विकल्प" : "🥉 #3 3RD OPTION"}
                           </span>
                         )}
                       </div>
@@ -1195,19 +1250,16 @@ export function FarmerPortal() {
                     <HealthDot health={health} />
                   </div>
 
-                  {/* Recommendation Reasons */}
-                  <div className="rounded-xl border border-leaf/20 bg-leaf-soft/40 p-2.5 text-xs text-navy">
-                    <p className="font-bold text-[11px] text-leaf">
-                      {isRecommended ? "⭐ AI Recommended Allocation Reason:" : "⚡ Operational Efficiency:"}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                      {c.predictedWaitMin <= 15
-                        ? (hi ? `न्यूनतम प्रतीक्षा समय (${c.predictedWaitMin} मिनट)। ${c.activeCounters} काउंटर सक्रिय होने से तेजी से तुलाई।` : `Shortest wait time (${c.predictedWaitMin} min). ${c.activeCounters} open weighbridge scales.`)
-                        : c.distanceKm <= 10
-                        ? (hi ? `आपके गाँव से सबसे निकट (${c.distanceKm} किमी)। न्यूनतम ढुलाई लागत।` : `Closest to your village (${c.distanceKm} km). Lowest tractor fuel cost.`)
-                        : (hi ? `स्थिर यार्ड क्षमता (${c.capacityUsedPct}% उपयोग)। सुचारू खरीद प्रक्रिया।` : `Stable yard capacity (${c.capacityUsedPct}% utilization). Steady intake pace.`)}
-                    </p>
-                  </div>
+                  {/* Recommended Slot Window (if evaluated by smart engine) */}
+                  {recCandidate && (
+                    <div className="flex items-center justify-between rounded-xl bg-leaf-soft/70 px-3 py-2 text-xs font-bold text-navy border border-leaf/30">
+                      <span className="text-leaf flex items-center gap-1.5">
+                        <span>🕒</span>
+                        <span>{hi ? "अनुशंसित समय स्लॉट:" : "Recommended Slot:"}</span>
+                      </span>
+                      <span className="font-extrabold text-navy">{recCandidate.slotWindow}</span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-3 gap-2 text-center text-xs">
                     <div className="rounded-lg bg-muted/60 p-2">
@@ -1236,17 +1288,23 @@ export function FarmerPortal() {
                     <button
                       type="button"
                       onClick={() => {
-                        setSelectedCentre(c);
-                        setBookingCentre(c);
+                        if (recCandidate) {
+                          handleSelectRecommendedCandidate(recCandidate);
+                        } else {
+                          setSelectedCentre(c);
+                          setBookingCentre(c);
+                        }
                       }}
                       className={cn(
-                        "w-full rounded-xl py-2.5 text-xs font-bold transition-transform hover:-translate-y-0.5 focus-ring",
-                        isRecommended
+                        "w-full rounded-xl py-2.5 text-xs font-bold transition-transform hover:-translate-y-0.5 focus-ring shadow-xs",
+                        matchRank === 0
                           ? "bg-gradient-leaf text-primary-foreground shadow-md shadow-leaf/20"
                           : "border border-border bg-card text-navy hover:bg-muted"
                       )}
                     >
-                      {hi ? "स्लॉट चुनें एवं बुक करें →" : "Choose Slot & Book →"}
+                      {recCandidate
+                        ? (hi ? `✓ स्लॉट आरक्षित करें (${recCandidate.slotWindow}) →` : `✓ Reserve Slot (${recCandidate.slotWindow}) →`)
+                        : (hi ? "स्लॉट चुनें एवं बुक करें →" : "Choose Slot & Book →")}
                     </button>
                   </div>
                 </div>

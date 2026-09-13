@@ -64,6 +64,7 @@ export interface SlotSuggestion {
   confidencePct: number;
   reason: string;
   reasonHi: string;
+  isBooked?: boolean;
 }
 
 export interface QueueTicket {

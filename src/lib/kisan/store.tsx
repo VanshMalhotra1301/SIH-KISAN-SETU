@@ -38,6 +38,11 @@ import {
 } from "./services";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  evaluateSmartRecommendations,
+  type CentreSlotCandidate,
+  type RecommendationEngineResult,
+} from "./recommendation-engine";
 import type {
   ActivityEvent,
   AiRecommendation,
@@ -90,6 +95,10 @@ interface KisanState {
   /** Bidding system state */
   biddingWindows: BiddingWindow[];
   farmerBids: Bid[];
+  /** Smart Multi-Objective Recommendation State */
+  availableSlots: SlotSuggestion[];
+  recentTickets: QueueRow[];
+  smartRecommendations: RecommendationEngineResult | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -112,12 +121,14 @@ interface KisanActions {
   sendNotification: (title: string, body: string, targetUserId?: string) => Promise<void>;
   refreshIntelligence: () => Promise<void>;
   refreshBiddingWindows: () => Promise<void>;
+  refreshRecommendations: () => Promise<void>;
 }
 
 interface KisanContextValue extends KisanState, KisanActions {
   summary: DistrictSummary;
   centreById: (id: string) => ProcurementCentre | undefined;
   recommendedCentre: ProcurementCentre | undefined;
+  top3Recommendations: CentreSlotCandidate[];
 }
 
 const emptyState: KisanState = {
@@ -141,6 +152,9 @@ const emptyState: KisanState = {
   interventionApplied: false,
   biddingWindows: [],
   farmerBids: [],
+  availableSlots: [],
+  recentTickets: [],
+  smartRecommendations: null,
   isLoading: true,
   error: null,
 };
@@ -178,6 +192,8 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           procurementService.getTimeline(undefined, activeUserId), // 4
           paymentService.getStatus(activeUserId),            // 5
           notificationsP,                                    // 6
+          slotService.listAllAvailable(),                    // 7
+          queueService.getAllQueue(),                        // 8
         ]);
 
         const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
@@ -192,6 +208,8 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           timeline: val(results[4], s.timeline),
           payment: val(results[5], s.payment),
           notifications: val(results[6], s.notifications),
+          availableSlots: val(results[7], s.availableSlots),
+          recentTickets: val(results[8], s.recentTickets),
           isLoading: false,
           error: null,
         }));
@@ -277,6 +295,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           intelligenceService.detectAnomalies(),              // 8
           intelligenceService.predictCongestion(),            // 9
           queueService.getAllQueue(),                         // 10
+          slotService.listAllAvailable(),                     // 11
         ]);
 
         const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
@@ -297,6 +316,8 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           anomalies: val(results[8], s.anomalies),
           congestionPredictions: val(results[9], s.congestionPredictions),
           queueRows: val(results[10], s.queueRows),
+          recentTickets: val(results[10], s.recentTickets),
+          availableSlots: val(results[11], s.availableSlots),
           interventionApplied: rec?.status === "approved",
           isLoading: false,
           error: null,
@@ -686,10 +707,51 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.id]);
 
+  const refreshRecommendations = useCallback(async () => {
+    try {
+      const [allSlots, allTickets] = await Promise.all([
+        slotService.listAllAvailable().catch(() => []),
+        queueService.getAllQueue().catch(() => []),
+      ]);
+      setState((s) => ({
+        ...s,
+        availableSlots: allSlots,
+        recentTickets: allTickets,
+      }));
+    } catch (err) {
+      console.warn("Failed to refresh recommendations data:", err);
+    }
+  }, []);
+
   // ─── Computed values ───
 
   const value = useMemo<KisanContextValue>(() => {
-    const centres = state.centres;
+    // Evaluate Smart Multi-Objective Recommendations across centres and slots
+    const smartRecommendations = evaluateSmartRecommendations({
+      centres: state.centres,
+      slots: state.availableSlots.length > 0 ? state.availableSlots : (state.slot ? [state.slot] : []),
+      recentTickets: state.recentTickets.length > 0 ? state.recentTickets : state.queueRows,
+      crop: state.farmer?.crop || user?.crop || "Wheat",
+      quantityQuintals: state.farmer?.quantityQuintals || 120,
+      village: state.farmer?.village || user?.village || "",
+    });
+
+    const top3Recommendations = smartRecommendations?.top3 || [];
+
+    // Dynamically flag the top recommended centre with explanation reasons
+    const centres = state.centres.map((c) => ({ ...c, recommended: false }));
+    const topRec = top3Recommendations[0];
+    if (topRec) {
+      const target = centres.find((c) => c.id === topRec.centreId);
+      if (target) {
+        target.recommended = true;
+        target.recommendationReasons = [topRec.explanation];
+        target.recommendationReasonsHi = [topRec.explanationHi];
+      }
+    } else if (centres.length > 0) {
+      centres[0]!.recommended = true;
+    }
+
     const activeCentres = centres.filter((c) => c.farmersToday > 0 || c.queueLength > 0);
 
     const summary: DistrictSummary = {
@@ -705,6 +767,8 @@ export function KisanProvider({ children }: { children: ReactNode }) {
 
     return {
       ...state,
+      smartRecommendations,
+      top3Recommendations,
       setLanguage,
       toggleLanguage,
       reviewRecommendation,
@@ -722,15 +786,16 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       deleteNotification,
       sendNotification,
       refreshBiddingWindows,
+      refreshRecommendations,
       summary,
       centreById: (id: string) => centres.find((c) => c.id === id || c.code === id),
       recommendedCentre: centres.find((c) => c.recommended),
     };
   }, [
-    state, setLanguage, toggleLanguage,
+    state, user?.crop, user?.village, setLanguage, toggleLanguage,
     reviewRecommendation, approveRecommendation, overrideRecommendation,
     refreshFromDatabase, refreshCentres, refreshQueue, refreshIntelligence, refreshBiddingWindows,
-    updateFarmerProfile, operatorProcessTicket, operatorUpdateCounters,
+    refreshRecommendations, updateFarmerProfile, operatorProcessTicket, operatorUpdateCounters,
     markNotificationRead, markAllNotificationsRead, deleteNotification, sendNotification,
   ]);
 
