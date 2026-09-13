@@ -53,6 +53,9 @@ function FarmerPageGuarded() {
 
 function getNotificationIcon(title: string, body: string) {
   const combined = (title + " " + body).toLowerCase();
+  if (combined.includes("rescue") || combined.includes("रेस्क्यू") || combined.includes("तत्काल स्लॉट") || combined.includes("रद्द")) {
+    return "⚡";
+  }
   if (combined.includes("टोकन") || combined.includes("token") || combined.includes("स्लॉट") || combined.includes("slot") || combined.includes("queue") || combined.includes("कतार")) {
     return "🎫";
   }
@@ -355,6 +358,13 @@ export function FarmerPortal() {
       await markNotificationRead(notif.id);
     }
     const combined = (notif.title + " " + notif.body).toLowerCase();
+    if (combined.includes("rescue") || combined.includes("रेस्क्यू") || combined.includes("तत्काल स्लॉट")) {
+      setShowNotifs(false);
+      if (!ticket) {
+        setActiveTab("centres");
+      }
+      return;
+    }
     if (combined.includes("बोली") || combined.includes("bid") || combined.includes("deal") || combined.includes("सौदे")) {
       setActiveTab("bids");
     } else if (combined.includes("टोकन") || combined.includes("token") || combined.includes("स्लॉट") || combined.includes("slot") || combined.includes("queue") || combined.includes("कतार")) {
@@ -591,26 +601,6 @@ export function FarmerPortal() {
       alert(err.message || "Failed to claim rescue slot");
     } finally {
       setClaimingRescueId(null);
-    }
-  };
-
-  // Trigger Demo Rescue Vacancy (for testing / evaluator demonstration)
-  const handleTriggerDemoRescue = async () => {
-    try {
-      const targetCentre = centres[0] || activeCentre;
-      if (!targetCentre) {
-        alert("No centre available for demo rescue.");
-        return;
-      }
-      await slotRescueService.triggerDemoVacancy(targetCentre.id, user?.id);
-      await refreshRescueOffers();
-      setSuccessBanner(
-        hi
-          ? "⚡ डेमो स्लॉट रिलीज सक्रिय! कतार में प्रतीक्षारत किसानों को तत्काल अलर्ट भेजा गया।"
-          : "⚡ Demo slot vacancy triggered! Realtime rescue offers dispatched to eligible farmers."
-      );
-    } catch (err: any) {
-      alert(err.message || "Failed to trigger demo rescue");
     }
   };
 
@@ -974,27 +964,7 @@ export function FarmerPortal() {
         </section>
       )}
 
-      {/* Demo Slot Rescue Trigger Bar (for evaluator simulation) */}
-      {!ticket && !activeRescueOffer && (
-        <div className="mt-3 flex items-center justify-between rounded-xl border border-dashed border-amber-300/80 bg-amber-50/40 px-4 py-2.5 text-xs text-amber-900">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-            </span>
-            <span className="font-semibold">
-              {hi ? "स्लॉट रेस्क्यू इंजन सक्रिय है: किसी भी रद्द स्लॉट का रियल-टाइम अलर्ट तुरंत यहाँ दिखेगा।" : "Slot Rescue Engine is active: Realtime alerts will pop up immediately when a slot is released."}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleTriggerDemoRescue}
-            className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700 transition-colors shadow-xs"
-          >
-            ⚡ {hi ? "स्लॉट रिलीज टेस्ट करें" : "Simulate Slot Release"}
-          </button>
-        </div>
-      )}
+
 
       {/* ─── 2. "WHAT SHOULD I DO NOW?" DYNAMIC GUIDANCE BANNER ─── */}
       <section
@@ -3165,8 +3135,93 @@ export function FarmerPortal() {
 
             {/* Notification Items List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* ⚡ Dedicated Smart Slot Rescue Card inside Notification Center */}
+              {activeRescueOffer && (
+                <div className="relative overflow-hidden rounded-2xl border-2 border-amber-400 bg-gradient-to-br from-amber-50 via-amber-100/50 to-orange-50/70 p-4 shadow-md ring-2 ring-amber-400/20">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-base text-white shadow-xs font-black">
+                        ⚡
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="rounded-md bg-amber-600 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
+                            {hi ? "तत्काल स्लॉट रेस्क्यू" : "Slot Rescue Alert"}
+                          </span>
+                          <span className="rounded-md bg-emerald-600/10 text-emerald-800 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold">
+                            {hi ? "पहले आओ-पहले पाओ" : "First-Confirmed Gets Slot"}
+                          </span>
+                        </div>
+                        <h4 className="mt-1 font-display text-sm font-black text-amber-950">
+                          {hi ? (activeRescueOffer.centreNameHi || activeRescueOffer.centreName) : activeRescueOffer.centreName}
+                        </h4>
+                      </div>
+                    </div>
+
+                    <span className="shrink-0 flex items-center gap-1 text-[10px] font-extrabold text-danger bg-red-100/90 px-2 py-0.5 rounded-full border border-red-200">
+                      ⏱ {formatCountdown(rescueCountdown)} {hi ? "शेष" : "left"}
+                    </span>
+                  </div>
+
+                  <div className="mt-2.5 rounded-xl bg-white/90 p-2.5 border border-amber-200/80 text-xs text-amber-900 space-y-1 shadow-2xs">
+                    <div className="flex items-center justify-between font-bold text-navy">
+                      <span>🕒 {activeRescueOffer.slotWindow}</span>
+                      <span className="text-[10px] text-muted-foreground font-semibold">
+                        {activeRescueOffer.slotDate || (hi ? "आज" : "Today")}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      {hi
+                        ? "किसी किसान द्वारा स्लॉट रद्द किया गया है। यह स्लॉट अभी खाली है और 1-क्लिक में तुरंत बुक किया जा सकता है।"
+                        : "A booked slot was just cancelled and released. It is available right now for instant 1-click confirmation."}
+                    </p>
+                    <div className="flex items-center gap-3 pt-1 text-[10px] font-bold text-amber-800">
+                      <span>🌾 {hi ? (activeRescueOffer.cropHi || activeRescueOffer.crop) : activeRescueOffer.crop}</span>
+                      <span>⚖️ ~{activeRescueOffer.quantityQuintals} qtl</span>
+                      {activeRescueOffer.distanceKm ? <span>📍 ~{activeRescueOffer.distanceKm} km</span> : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => dismissRescueOffer()}
+                      className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-bold text-amber-900 hover:bg-amber-100/60 transition-colors"
+                    >
+                      {hi ? "खारिज करें" : "Dismiss"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={claimingRescueId === activeRescueOffer.id}
+                      onClick={async () => {
+                        await handleClaimRescue(activeRescueOffer.id);
+                        setShowNotifs(false);
+                      }}
+                      className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-amber-700 to-emerald-700 px-4 py-1.5 text-[11px] font-black text-white shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all focus-ring"
+                    >
+                      {claimingRescueId === activeRescueOffer.id ? (
+                        <>
+                          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                          <span>{hi ? "स्लॉट बुक हो रहा है..." : "Securing Slot..."}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>⚡</span>
+                          <span>{hi ? "तुरंत बुक करें (Book Now)" : "Book Now (Instant Confirm)"}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Standard Notifications */}
               {notifications.length > 0 ? (
                 notifications.map((n) => {
+                  const isRescue =
+                    (n.title + " " + n.body).toLowerCase().includes("rescue") ||
+                    (n.title + " " + n.body).toLowerCase().includes("तत्काल स्लॉट") ||
+                    (n.title + " " + n.body).toLowerCase().includes("रद्द");
                   const icon = getNotificationIcon(n.title, n.body);
                   const timeAgo = formatRelativeTime(n.createdAt, hi);
 
@@ -3176,20 +3231,32 @@ export function FarmerPortal() {
                       onClick={() => handleNotificationClick(n)}
                       className={cn(
                         "group relative flex cursor-pointer gap-3 rounded-2xl border p-4 transition-all hover:scale-[1.01] hover:shadow-md",
-                        n.isRead
+                        isRescue
+                          ? "border-amber-400/80 bg-amber-50/50 shadow-xs ring-1 ring-amber-300"
+                          : n.isRead
                           ? "border-border bg-card/60 opacity-80"
                           : "border-leaf/50 bg-leaf-soft/40 shadow-xs ring-1 ring-leaf/30"
                       )}
                     >
                       {/* Category Icon */}
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-card border border-border text-lg shadow-xs">
+                      <span
+                        className={cn(
+                          "flex size-10 shrink-0 items-center justify-center rounded-xl border text-lg shadow-xs",
+                          isRescue ? "bg-amber-100 border-amber-300 text-amber-900" : "bg-card border-border"
+                        )}
+                      >
                         {icon}
                       </span>
 
                       {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
-                          <h4 className={cn("font-display text-xs font-extrabold", n.isRead ? "text-navy" : "text-navy font-black")}>
+                          <h4
+                            className={cn(
+                              "font-display text-xs font-extrabold",
+                              isRescue ? "text-amber-950 font-black" : n.isRead ? "text-navy" : "text-navy font-black"
+                            )}
+                          >
                             {n.title}
                           </h4>
                           <span className="shrink-0 text-[10px] font-semibold text-muted-foreground whitespace-nowrap">
@@ -3201,17 +3268,37 @@ export function FarmerPortal() {
                           {n.body}
                         </p>
 
-                        <div className="mt-2.5 flex items-center justify-between text-[10px] font-bold text-leaf">
-                          <span className="group-hover:underline">
-                            {hi ? "विवरण देखें →" : "View details →"}
-                          </span>
-                          {!n.isRead && (
-                            <span className="flex items-center gap-1 text-leaf font-extrabold">
-                              <span className="size-1.5 rounded-full bg-leaf animate-blip" />
-                              {hi ? "नया" : "Unread"}
+                        {/* Inline Action for Rescue Alerts if active */}
+                        {isRescue && activeRescueOffer && !ticket ? (
+                          <div className="mt-2.5 flex items-center justify-between pt-1 border-t border-amber-200/60">
+                            <span className="text-[10px] font-bold text-amber-800">
+                              ⚡ {hi ? "स्लॉट अभी खाली है" : "Slot is currently vacant"}
                             </span>
-                          )}
-                        </div>
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                await handleClaimRescue(activeRescueOffer.id);
+                                setShowNotifs(false);
+                              }}
+                              className="rounded-lg bg-amber-600 px-2.5 py-1 text-[10px] font-extrabold text-white shadow-xs hover:bg-amber-700 transition-colors"
+                            >
+                              ⚡ {hi ? "तुरंत बुक करें" : "Book Now"}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-2.5 flex items-center justify-between text-[10px] font-bold text-leaf">
+                            <span className="group-hover:underline">
+                              {hi ? "विवरण देखें →" : "View details →"}
+                            </span>
+                            {!n.isRead && (
+                              <span className="flex items-center gap-1 text-leaf font-extrabold">
+                                <span className="size-1.5 rounded-full bg-leaf animate-blip" />
+                                {hi ? "नया" : "Unread"}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Delete Button */}
@@ -3229,7 +3316,7 @@ export function FarmerPortal() {
                     </div>
                   );
                 })
-              ) : (
+              ) : !activeRescueOffer ? (
                 <div className="flex flex-col items-center justify-center h-64 text-center p-6 space-y-3">
                   <span className="text-4xl">🔔</span>
                   <p className="font-display text-sm font-extrabold text-navy">
@@ -3238,10 +3325,10 @@ export function FarmerPortal() {
                   <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
                     {hi
                       ? "स्लॉट बुकिंग, तुलाई प्रगति, डिजिटल बिल या डीबीटी भुगतान से संबंधित अलर्ट तुरंत यहाँ दिखाई देंगे।"
-                      : "Real-time alerts regarding slot confirmations, weighment slips, and DBT payouts will appear here automatically."}
+                      : "Booking confirmations, cancelled slot rescue alerts, weighbridge velocity, and DBT payment alerts will appear here."}
                   </p>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Footer */}

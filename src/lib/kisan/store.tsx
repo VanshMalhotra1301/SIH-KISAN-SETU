@@ -599,7 +599,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      // 2. Listen on all slot vacancies updates (status change, claimed, expired)
+      // 2. Listen on all slot vacancies updates (cancellations, status changes, claims, expiry)
       channelBuilder.on("postgres_changes", {
         event: "*",
         schema: "public",
@@ -608,6 +608,62 @@ export function KisanProvider({ children }: { children: ReactNode }) {
         slotRescueService.getActiveVacancies().then((openVacancies) => {
           setState((s) => ({ ...s, openVacancies }));
         }).catch(() => {});
+
+        // When ANYONE cancels a slot anywhere (a new open vacancy is created)
+        if ((payload.eventType === "INSERT" || payload.eventType === "UPDATE") && payload.new?.status === "open") {
+          const vacancy = payload.new;
+          if (user?.id && vacancy.released_by !== user.id) {
+            // Update active rescue offer
+            slotRescueService.getActiveOfferForFarmer(user.id).then((offer) => {
+              if (offer) {
+                setState((s) => ({ ...s, activeRescueOffer: offer }));
+              } else {
+                setState((s) => {
+                  if (s.ticket) return s; // already has booked ticket
+                  return {
+                    ...s,
+                    activeRescueOffer: {
+                      id: vacancy.id,
+                      slotId: vacancy.slot_id,
+                      centreId: vacancy.centre_id,
+                      centreName: vacancy.centre_name,
+                      centreNameHi: vacancy.centre_name_hi,
+                      slotDate: vacancy.slot_date,
+                      slotWindow: vacancy.slot_window,
+                      crop: vacancy.crop,
+                      cropHi: vacancy.crop_hi,
+                      quantityQuintals: Number(vacancy.quantity_quintals) || 100,
+                      status: "open",
+                      releasedBy: vacancy.released_by,
+                      expiresAt: vacancy.expires_at,
+                      cancellationReason: vacancy.cancellation_reason,
+                      createdAt: vacancy.created_at,
+                      distanceKm: 4.2,
+                    },
+                  };
+                });
+              }
+            }).catch(() => {});
+
+            // Update Notification Center immediately
+            notificationService.getForUser(user.id).then((freshNotifs) => {
+              setState((s) => {
+                const alreadyHas = freshNotifs.some((n) => n.id === `rescue-${vacancy.id}` || n.body.includes(vacancy.slot_window));
+                if (!alreadyHas && !s.ticket) {
+                  const rescueNotifItem = {
+                    id: `rescue-${vacancy.id}`,
+                    title: "⚡ तत्काल स्लॉट उपलब्ध (Procurement Slot Rescue!)",
+                    body: `${vacancy.centre_name || "मंडी"} में ${vacancy.slot_window} का स्लॉट किसी किसान द्वारा रद्द किया गया है। 1-क्लिक में तुरंत बुक करें!`,
+                    isRead: false,
+                    createdAt: new Date().toISOString(),
+                  };
+                  return { ...s, notifications: [rescueNotifItem, ...freshNotifs] };
+                }
+                return { ...s, notifications: freshNotifs };
+              });
+            }).catch(() => {});
+          }
+        }
 
         // If currently displayed offer was claimed or expired, update or clear it
         if (payload.eventType === "UPDATE" && payload.new) {
