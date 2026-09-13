@@ -476,11 +476,21 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     // Queue ticket updates: refresh relevant data based on role
     channelBuilder.on("postgres_changes", { event: "*", schema: "public", table: "queue_tickets", filter: ticketFilter }, () => {
       if (role === "farmer" && user.id) {
-        // Farmer: refresh ticket + timeline
-        queueService.getTicket(user.id).then((ticket) => setState((s) => ({ ...s, ticket }))).catch(() => {});
+        // Farmer: refresh ticket + timeline + centres (queue counts may have changed)
+        queueService.getTicket(user.id).then((ticket) => {
+          if (ticket) {
+            // Active ticket — just update ticket state
+            setState((s) => ({ ...s, ticket }));
+          } else {
+            // No active ticket (cancelled/done/rejected) — clear all booking state
+            setState((s) => ({ ...s, ticket: null, slot: null, payment: null, timeline: [] }));
+          }
+        }).catch(() => {});
         procurementService.getTimeline(undefined, user.id).then((timeline) => setState((s) => ({ ...s, timeline }))).catch(() => {});
+        refreshCentres();
       } else if (role === "centre_operator" && user.centreId) {
         refreshQueue(user.centreId);
+        refreshCentres();
       } else {
         // Admin roles: full refresh is acceptable (less frequent)
         refreshFromDatabase();
@@ -850,7 +860,17 @@ export function KisanProvider({ children }: { children: ReactNode }) {
         reason: reason || "Farmer requested cancellation",
       });
       if (res.success) {
-        setState((s) => ({ ...s, ticket: null }));
+        // Immediately clear ALL booking-related state so the UI reflects cancellation
+        // before the full async refresh completes
+        setState((s) => ({
+          ...s,
+          ticket: null,
+          slot: null,
+          payment: null,
+          timeline: [],
+        }));
+        // Refresh all data from database to get consistent state
+        // (centres queue counts, notifications, available slots, etc.)
         await refreshFromDatabase();
         return true;
       }

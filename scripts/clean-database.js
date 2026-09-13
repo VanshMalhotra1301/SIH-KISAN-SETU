@@ -241,33 +241,43 @@ async function cleanAndResetDatabase() {
   await client.connect();
 
   try {
-    // 1. Delete all transactional, bidding, deal-room, and mock tables
-    console.log('\n[1/6] Cleaning all mock transactional tables in dependency order...');
-    await client.query('DELETE FROM public.deal_messages;');
-    await client.query('DELETE FROM public.bids;');
-    await client.query('DELETE FROM public.bidding_windows;');
-    await client.query('DELETE FROM public.audit_logs;');
-    await client.query('DELETE FROM public.procurement_timeline;');
-    await client.query('DELETE FROM public.payments;');
-    await client.query('DELETE FROM public.grievances;');
-    await client.query('DELETE FROM public.queue_tickets;');
-    await client.query('DELETE FROM public.notifications;');
-    await client.query('DELETE FROM public.activity_feed;');
-    await client.query('DELETE FROM public.ai_recommendations;');
-    await client.query('DELETE FROM public.centre_alerts;');
-    await client.query('DELETE FROM public.slots;');
-    await client.query('DELETE FROM public.buyers;');
-    await client.query('DELETE FROM public.farmers;');
-    await client.query('DELETE FROM public.profiles;');
+    // 1. Delete all transactional, bidding, deal-room, slot rescue, and mock tables
+    console.log('\n[1/6] Cleaning all transactional and mock tables in dependency order...');
+    await client.query('DELETE FROM public.slot_rescue_recipients;').catch((e) => console.log('Notice slot_rescue_recipients:', e.message));
+    await client.query('DELETE FROM public.slot_vacancies;').catch((e) => console.log('Notice slot_vacancies:', e.message));
+    await client.query('DELETE FROM public.deal_messages;').catch((e) => console.log('Notice deal_messages:', e.message));
+    await client.query('DELETE FROM public.bids;').catch((e) => console.log('Notice bids:', e.message));
+    await client.query('DELETE FROM public.bidding_windows;').catch((e) => console.log('Notice bidding_windows:', e.message));
+    await client.query('DELETE FROM public.audit_logs;').catch((e) => console.log('Notice audit_logs:', e.message));
+    await client.query('DELETE FROM public.procurement_timeline;').catch((e) => console.log('Notice procurement_timeline:', e.message));
+    await client.query('DELETE FROM public.payments;').catch((e) => console.log('Notice payments:', e.message));
+    await client.query('DELETE FROM public.grievances;').catch((e) => console.log('Notice grievances:', e.message));
+    await client.query('DELETE FROM public.queue_tickets;').catch((e) => console.log('Notice queue_tickets:', e.message));
+    await client.query('DELETE FROM public.notifications;').catch((e) => console.log('Notice notifications:', e.message));
+    await client.query('DELETE FROM public.activity_feed;').catch((e) => console.log('Notice activity_feed:', e.message));
+    await client.query('DELETE FROM public.ai_recommendations;').catch((e) => console.log('Notice ai_recommendations:', e.message));
+    await client.query('DELETE FROM public.centre_alerts;').catch((e) => console.log('Notice centre_alerts:', e.message));
+    await client.query('DELETE FROM public.slots;').catch((e) => console.log('Notice slots:', e.message));
+    await client.query('DELETE FROM public.buyers;').catch((e) => console.log('Notice buyers:', e.message));
+    await client.query('DELETE FROM public.farmers;').catch((e) => console.log('Notice farmers:', e.message));
+    await client.query('DELETE FROM public.profiles;').catch((e) => console.log('Notice profiles:', e.message));
     console.log('✓ All mock transactional and profile records cleared.');
 
-    // 2. Clean all non-official auth accounts
-    console.log('\n[2/6] Cleaning test / mock accounts from auth.users & auth.identities...');
-    const officialIds = OFFICIAL_ACCOUNTS.map((a) => `'${a.id}'`).join(',');
+    const isBlankMode = process.argv.includes('--blank');
 
-    await client.query(`DELETE FROM auth.identities WHERE user_id NOT IN (${officialIds});`);
-    await client.query(`DELETE FROM auth.users WHERE id NOT IN (${officialIds});`);
-    console.log('✓ All temporary and mock accounts deleted from auth schema.');
+    // 2. Clean auth accounts
+    if (isBlankMode) {
+      console.log('\n[2/6] [BLANK MODE] Cleaning ALL accounts from auth.users & auth.identities...');
+      await client.query('DELETE FROM auth.identities;');
+      await client.query('DELETE FROM auth.users;');
+      console.log('✓ All accounts completely deleted from auth schema.');
+    } else {
+      console.log('\n[2/6] Cleaning test / mock accounts from auth.users & auth.identities...');
+      const officialIds = OFFICIAL_ACCOUNTS.map((a) => `'${a.id}'`).join(',');
+      await client.query(`DELETE FROM auth.identities WHERE user_id NOT IN (${officialIds});`);
+      await client.query(`DELETE FROM auth.users WHERE id NOT IN (${officialIds});`);
+      console.log('✓ All temporary and test accounts deleted from auth schema.');
+    }
 
     // 3. Re-seed clean procurement centres first (so foreign keys for centre_id are valid)
     console.log('\n[3/6] Resetting procurement centres to initial operational state...');
@@ -312,154 +322,158 @@ async function cleanAndResetDatabase() {
     console.log('✓ 5 official procurement centres reset with zero queues and clean capacity.');
 
     // 4. Re-seed verified official role portal accounts
-    console.log('\n[4/6] Re-establishing verified official role accounts...');
-    for (const acc of OFFICIAL_ACCOUNTS) {
-      const userMeta = JSON.stringify({
-        role: acc.role,
-        full_name: acc.full_name,
-        full_name_hi: acc.full_name_hi,
-        village: acc.village,
-        village_hi: acc.village_hi,
-        district: acc.district,
-        phone: acc.phone,
-        crop: acc.crop || 'Wheat',
-        crop_hi: acc.crop_hi || 'गेहूँ',
-        quantity_quintals: acc.quantity_quintals || 120,
-        centre_id: acc.centre_id || null,
-        department: acc.department || 'Department of Agriculture',
-        business_name: acc.business_name || null,
-        business_type: acc.business_type || null,
-        license_number: acc.license_number || null,
-      });
+    if (!isBlankMode) {
+      console.log('\n[4/6] Re-establishing verified official role accounts...');
+      for (const acc of OFFICIAL_ACCOUNTS) {
+        const userMeta = JSON.stringify({
+          role: acc.role,
+          full_name: acc.full_name,
+          full_name_hi: acc.full_name_hi,
+          village: acc.village,
+          village_hi: acc.village_hi,
+          district: acc.district,
+          phone: acc.phone,
+          crop: acc.crop || 'Wheat',
+          crop_hi: acc.crop_hi || 'गेहूँ',
+          quantity_quintals: acc.quantity_quintals || 120,
+          centre_id: acc.centre_id || null,
+          department: acc.department || 'Department of Agriculture',
+          business_name: acc.business_name || null,
+          business_type: acc.business_type || null,
+          license_number: acc.license_number || null,
+        });
 
-      const appMeta = JSON.stringify({ provider: 'email', providers: ['email'] });
-      const identityData = JSON.stringify({ sub: acc.id, email: acc.email });
+        const appMeta = JSON.stringify({ provider: 'email', providers: ['email'] });
+        const identityData = JSON.stringify({ sub: acc.id, email: acc.email });
 
-      await client.query(
-        `
-        INSERT INTO auth.users (
-          id, instance_id, aud, role, email, encrypted_password,
-          email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
-          created_at, updated_at, confirmation_token, email_change, email_change_token_new,
-          recovery_token, is_super_admin, is_sso_user, is_anonymous
-        ) VALUES (
-          $1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2,
-          extensions.crypt('KisanSetu2026!', extensions.gen_salt('bf', 10)),
-          now(), $3::jsonb, $4::jsonb,
-          now(), now(), '', '', '', '', false, false, false
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          email = EXCLUDED.email,
-          encrypted_password = extensions.crypt('KisanSetu2026!', extensions.gen_salt('bf', 10)),
-          email_confirmed_at = now(),
-          raw_user_meta_data = $4::jsonb;
-      `,
-        [acc.id, acc.email, appMeta, userMeta]
-      );
-
-      await client.query(
-        `
-        INSERT INTO auth.identities (
-          id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
-        ) VALUES (
-          $1::uuid, $1::uuid, $2::jsonb, 'email', $1::text, now(), now(), now()
-        )
-        ON CONFLICT (provider, provider_id) DO UPDATE SET
-          identity_data = $2::jsonb,
-          last_sign_in_at = now();
-      `,
-        [acc.id, identityData]
-      );
-
-      await client.query(
-        `
-        INSERT INTO public.profiles (
-          id, role, full_name, full_name_hi, district, village, village_hi, phone, centre_id, department
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          role = EXCLUDED.role,
-          full_name = EXCLUDED.full_name,
-          full_name_hi = EXCLUDED.full_name_hi,
-          district = EXCLUDED.district,
-          village = EXCLUDED.village,
-          village_hi = EXCLUDED.village_hi,
-          phone = EXCLUDED.phone,
-          centre_id = EXCLUDED.centre_id,
-          department = EXCLUDED.department;
-      `,
-        [
-          acc.id,
-          acc.role,
-          acc.full_name,
-          acc.full_name_hi,
-          acc.district,
-          acc.village,
-          acc.village_hi,
-          acc.phone,
-          acc.centre_id || null,
-          acc.department || null,
-        ]
-      );
-
-      if (acc.role === 'farmer') {
         await client.query(
           `
-          INSERT INTO public.farmers (
-            id, farmer_id_code, crop, crop_hi, quantity_quintals, land_area_acres,
-            bank_name, bank_account_masked, ifsc_code
+          INSERT INTO auth.users (
+            id, instance_id, aud, role, email, encrypted_password,
+            email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+            created_at, updated_at, confirmation_token, email_change, email_change_token_new,
+            recovery_token, is_super_admin, is_sso_user, is_anonymous
           ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9
+            $1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2,
+            extensions.crypt('KisanSetu2026!', extensions.gen_salt('bf', 10)),
+            now(), $3::jsonb, $4::jsonb,
+            now(), now(), '', '', '', '', false, false, false
           )
           ON CONFLICT (id) DO UPDATE SET
-            farmer_id_code = EXCLUDED.farmer_id_code,
-            crop = EXCLUDED.crop,
-            crop_hi = EXCLUDED.crop_hi,
-            quantity_quintals = EXCLUDED.quantity_quintals,
-            land_area_acres = EXCLUDED.land_area_acres;
+            email = EXCLUDED.email,
+            encrypted_password = extensions.crypt('KisanSetu2026!', extensions.gen_salt('bf', 10)),
+            email_confirmed_at = now(),
+            raw_user_meta_data = $4::jsonb;
         `,
-          [
-            acc.id,
-            acc.farmer_id_code,
-            acc.crop,
-            acc.crop_hi,
-            acc.quantity_quintals,
-            acc.land_area_acres,
-            acc.bank_name,
-            acc.bank_account_masked,
-            acc.ifsc_code,
-          ]
+          [acc.id, acc.email, appMeta, userMeta]
         );
-      }
 
-      if (acc.role === 'buyer') {
         await client.query(
           `
-          INSERT INTO public.buyers (
-            user_id, business_name, business_type, license_number, licence_number, centre_id, is_active
+          INSERT INTO auth.identities (
+            id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
           ) VALUES (
-            $1, $2, $3, $4, $4, $5, true
+            $1::uuid, $1::uuid, $2::jsonb, 'email', $1::text, now(), now(), now()
           )
-          ON CONFLICT (user_id) DO UPDATE SET
-            business_name = EXCLUDED.business_name,
-            business_type = EXCLUDED.business_type,
-            license_number = EXCLUDED.license_number,
-            licence_number = EXCLUDED.licence_number,
+          ON CONFLICT (provider, provider_id) DO UPDATE SET
+            identity_data = $2::jsonb,
+            last_sign_in_at = now();
+        `,
+          [acc.id, identityData]
+        );
+
+        await client.query(
+          `
+          INSERT INTO public.profiles (
+            id, role, full_name, full_name_hi, district, village, village_hi, phone, centre_id, department
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            role = EXCLUDED.role,
+            full_name = EXCLUDED.full_name,
+            full_name_hi = EXCLUDED.full_name_hi,
+            district = EXCLUDED.district,
+            village = EXCLUDED.village,
+            village_hi = EXCLUDED.village_hi,
+            phone = EXCLUDED.phone,
             centre_id = EXCLUDED.centre_id,
-            is_active = true;
+            department = EXCLUDED.department;
         `,
           [
             acc.id,
-            acc.business_name,
-            acc.business_type || 'trader',
-            acc.license_number || 'APMC-KRN-2024-001',
-            acc.centre_id,
+            acc.role,
+            acc.full_name,
+            acc.full_name_hi,
+            acc.district,
+            acc.village,
+            acc.village_hi,
+            acc.phone,
+            acc.centre_id || null,
+            acc.department || null,
           ]
         );
+
+        if (acc.role === 'farmer') {
+          await client.query(
+            `
+            INSERT INTO public.farmers (
+              id, farmer_id_code, crop, crop_hi, quantity_quintals, land_area_acres,
+              bank_name, bank_account_masked, ifsc_code
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              farmer_id_code = EXCLUDED.farmer_id_code,
+              crop = EXCLUDED.crop,
+              crop_hi = EXCLUDED.crop_hi,
+              quantity_quintals = EXCLUDED.quantity_quintals,
+              land_area_acres = EXCLUDED.land_area_acres;
+          `,
+            [
+              acc.id,
+              acc.farmer_id_code,
+              acc.crop,
+              acc.crop_hi,
+              acc.quantity_quintals,
+              acc.land_area_acres,
+              acc.bank_name,
+              acc.bank_account_masked,
+              acc.ifsc_code,
+            ]
+          );
+        }
+
+        if (acc.role === 'buyer') {
+          await client.query(
+            `
+            INSERT INTO public.buyers (
+              user_id, business_name, business_type, license_number, licence_number, centre_id, is_active
+            ) VALUES (
+              $1, $2, $3, $4, $4, $5, true
+            )
+            ON CONFLICT (user_id) DO UPDATE SET
+              business_name = EXCLUDED.business_name,
+              business_type = EXCLUDED.business_type,
+              license_number = EXCLUDED.license_number,
+              licence_number = EXCLUDED.licence_number,
+              centre_id = EXCLUDED.centre_id,
+              is_active = true;
+          `,
+            [
+              acc.id,
+              acc.business_name,
+              acc.business_type || 'trader',
+              acc.license_number || 'APMC-KRN-2024-001',
+              acc.centre_id,
+            ]
+          );
+        }
       }
+      console.log('✓ Official accounts (farmer, centre operator, admin, superadmin, buyer) verified and restored.');
+    } else {
+      console.log('\n[4/6] [BLANK MODE] Skipping account re-seeding (0 accounts remain).');
     }
-    console.log('✓ Official accounts (farmer, centre operator, admin, superadmin, buyer) verified and restored.');
 
     // 5. Generate fresh open slots for today & tomorrow
     console.log('\n[5/6] Generating clean, unbooked slot schedule...');
@@ -494,29 +508,37 @@ async function cleanAndResetDatabase() {
     console.log('✓ Fresh unbooked slots generated for all centres.');
 
     // 6. Verify Supabase Auth SDK Sign In
-    console.log('\n[6/6] Verifying Supabase Auth SDK Authentication...');
-    const sb = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
-    for (const acc of OFFICIAL_ACCOUNTS) {
-      const res = await sb.auth.signInWithPassword({
-        email: acc.email,
-        password: 'KisanSetu2026!',
-      });
-      if (res.data.user) {
-        console.log(`  [✓ OK] ${acc.email} (${acc.role}) -> authenticated successfully`);
-      } else {
-        console.error(`  [✗ FAIL] ${acc.email}: ${res.error?.message}`);
+    if (!isBlankMode) {
+      console.log('\n[6/6] Verifying Supabase Auth SDK Authentication...');
+      const sb = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
+      for (const acc of OFFICIAL_ACCOUNTS) {
+        const res = await sb.auth.signInWithPassword({
+          email: acc.email,
+          password: 'KisanSetu2026!',
+        });
+        if (res.data.user) {
+          console.log(`  [✓ OK] ${acc.email} (${acc.role}) -> authenticated successfully`);
+        } else {
+          console.error(`  [✗ FAIL] ${acc.email}: ${res.error?.message}`);
+        }
       }
+    } else {
+      console.log('\n[6/6] [BLANK MODE] Database is 100% clean with 0 accounts.');
     }
 
     console.log('\n====================================================');
     console.log('🎉 DATABASE CLEAN & RESET COMPLETE!');
     console.log('All mock data and test accounts have been wiped.');
-    console.log('Pristine official portal accounts ready to use:');
-    console.log(' - Farmer:           farmer@kisansetu.in      / KisanSetu2026!');
-    console.log(' - Centre Operator:  centre@kisansetu.in      / KisanSetu2026!');
-    console.log(' - District Admin:   admin@kisansetu.in       / KisanSetu2026!');
-    console.log(' - Super Admin:      superadmin@kisansetu.in  / KisanSetu2026!');
-    console.log(' - Buyer:            buyer@kisansetu.in       / KisanSetu2026!');
+    if (!isBlankMode) {
+      console.log('Pristine official portal accounts ready to use:');
+      console.log(' - Farmer:           farmer@kisansetu.in      / KisanSetu2026!');
+      console.log(' - Centre Operator:  centre@kisansetu.in      / KisanSetu2026!');
+      console.log(' - District Admin:   admin@kisansetu.in       / KisanSetu2026!');
+      console.log(' - Super Admin:      superadmin@kisansetu.in  / KisanSetu2026!');
+      console.log(' - Buyer:            buyer@kisansetu.in       / KisanSetu2026!');
+    } else {
+      console.log('Mode: BLANK WIPE (0 users in database). Fresh signups ready at /login.');
+    }
     console.log('====================================================');
   } catch (err) {
     console.error('Error cleaning database:', err);

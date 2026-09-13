@@ -171,11 +171,12 @@ export const farmerService = {
     slotWindow?: string | undefined;
   }): Promise<{ token: string; ticketId: string }> => {
     // ── Duplicate Booking Prevention ──
+    // Exclude done, rejected, AND cancelled tickets so farmers can re-book after cancellation
     const { data: existingTicket } = await supabase
       .from("queue_tickets")
       .select("id, token")
       .eq("farmer_id", params.farmerId)
-      .not("stage", "in", '("done","rejected")')
+      .not("stage", "in", '("done","rejected","cancelled")')
       .limit(1)
       .maybeSingle();
 
@@ -208,13 +209,14 @@ export const farmerService = {
     const totalRatePerMin = (ratePerHour * activeCounters) / 60;
     const computedETA = Math.max(5, Math.round(realQueueLength / totalRatePerMin));
 
-    // 3. Insert into queue_tickets
+    // 3. Insert into queue_tickets (include slot_id so cancellation can release it)
     const { data: ticket, error: ticketError } = await supabase
       .from("queue_tickets")
       .insert({
         token,
         farmer_id: params.farmerId,
         centre_id: params.centreId,
+        slot_id: params.slotId || null,
         farmer_name: params.farmerName,
         village: params.village,
         crop: params.crop,
@@ -384,12 +386,14 @@ export const centreService = {
 export const slotService = {
   /** Get AI-recommended slot for a farmer — smart ranking */
   suggest: async (centreId?: string, farmerId?: string): Promise<SlotSuggestion | null> => {
-    // First: check if this farmer already has a booked slot
+    // First: check if this farmer already has an ACTIVELY booked slot
+    // Must filter is_booked=true so cancelled/released slots are not returned
     if (farmerId) {
       const { data: mySlot } = await supabase
         .from("slots")
         .select("*")
         .eq("booked_by", farmerId)
+        .eq("is_booked", true)
         .limit(1)
         .maybeSingle();
       if (mySlot) {
