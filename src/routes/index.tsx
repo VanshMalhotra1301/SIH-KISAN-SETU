@@ -115,9 +115,37 @@ const INNOVATION_ITEMS: InnovationItem[] = [
     actionLabelHi: "लाइव कतार देखें →",
   },
   {
+    id: "slot-rescue",
+    category: "farmer",
+    number: "03",
+    badge: "Instant Rescue",
+    badgeHi: "स्मार्ट रेस्क्यू",
+    badgeColor: "bg-amber-500/10 text-amber-700 border-amber-500/30",
+    icon: "⚡",
+    title: "Procurement Slot Rescue",
+    titleHi: "स्मार्ट स्लॉट रेस्क्यू",
+    subtitle: "Released or cancelled slots are instantly offered to waitlisted farmers.",
+    subtitleHi: "छूटे हुए स्लॉट तत्काल कतार में प्रतीक्षारत किसानों को 1-क्लिक में मिलते हैं।",
+    highlightChip: "⚡ Real-Time 1-Click Booking",
+    highlightChipHi: "⚡ 1-क्लिक में तत्काल स्लॉट आवंटन",
+    points: [
+      "Zero wasted mandi scale capacity",
+      "Real-time notifications to eligible waitlist",
+      "First-confirmed gets slot with full audit trail",
+    ],
+    pointsHi: [
+      "रद्द स्लॉट कभी बेकार नहीं जाते",
+      "नजदीकी किसानों को तुरंत मोबाइल अलर्ट",
+      "पहले आओ-पहले पाओ व 100% पारदर्शी रिकॉर्ड",
+    ],
+    route: "/farmer",
+    actionLabel: "Try Slot Rescue →",
+    actionLabelHi: "स्लॉट रेस्क्यू देखें →",
+  },
+  {
     id: "buyer",
     category: "trade",
-    number: "03",
+    number: "04",
     badge: "B2B Market",
     badgeHi: "सीधा व्यापार",
     badgeColor: "bg-amber-500/10 text-amber-700 border-amber-500/30",
@@ -145,7 +173,7 @@ const INNOVATION_ITEMS: InnovationItem[] = [
   {
     id: "sahayak",
     category: "farmer",
-    number: "04",
+    number: "05",
     badge: "Voice AI",
     badgeHi: "वॉयस एआई",
     badgeColor: "bg-sky-500/10 text-sky-700 border-sky-500/30",
@@ -173,7 +201,7 @@ const INNOVATION_ITEMS: InnovationItem[] = [
   {
     id: "control-tower",
     category: "ai",
-    number: "05",
+    number: "06",
     badge: "Radar",
     badgeHi: "कंट्रोल रडार",
     badgeColor: "bg-cyan-600/10 text-cyan-800 border-cyan-600/30",
@@ -201,7 +229,7 @@ const INNOVATION_ITEMS: InnovationItem[] = [
   {
     id: "dbt",
     category: "trade",
-    number: "06",
+    number: "07",
     badge: "Direct DBT",
     badgeHi: "सीधा भुगतान",
     badgeColor: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30",
@@ -630,21 +658,21 @@ export function LandingPage() {
             <span>{hi ? "प्रमुख नवाचार एवं तकनीकी उपलब्धियाँ" : "SIH 2026 Core Innovations & Breakthroughs"}</span>
           </div>
           <h2 className="mt-3 font-display text-3xl font-black text-navy sm:text-5xl tracking-tight leading-tight">
-            {hi ? "किसान सेतु के 6 प्रमुख तकनीकी नवाचार" : "6 Architectural Innovations Powering Kisan Setu"}
+            {hi ? "किसान सेतु के 7 प्रमुख तकनीकी नवाचार" : "7 Architectural Innovations Powering Kisan Setu"}
           </h2>
           <p className="mt-3 text-sm sm:text-base text-muted-foreground leading-relaxed">
             {hi
-              ? "पारंपरिक टोकन प्रणाली से आगे बढ़कर: वास्तविक समय डेटा, बहु-उद्देश्यीय एआई एल्गोरिदम, प्रत्यक्ष संस्थागत बाज़ार और पारदर्शी डीबीटी।"
-              : "Moving beyond passive digitization: proactive multi-objective optimization, live weighbridge velocity modeling, direct institutional B2B deal rooms, and 100% PFMS DBT transparency."}
+              ? "पारंपरिक टोकन प्रणाली से आगे बढ़कर: वास्तविक समय डेटा, तत्काल स्लॉट रेस्क्यू, बहु-उद्देश्यीय एआई, संस्थागत बाज़ार और पारदर्शी डीबीटी।"
+              : "Moving beyond passive digitization: real-time slot rescue, proactive multi-objective optimization, live weighbridge velocity modeling, direct B2B deal rooms, and 100% PFMS DBT transparency."}
           </p>
         </div>
 
         {/* Interactive Filter Pills */}
         <div className="flex flex-wrap items-center justify-center gap-2">
           {[
-            { id: "all", label: hi ? "सभी 6 नवाचार" : "All 6 Innovations", count: 6 },
+            { id: "all", label: hi ? "सभी 7 नवाचार" : "All 7 Innovations", count: 7 },
             { id: "ai", label: hi ? "🧠 एआई एवं भविष्यवाणी इंजन" : "🧠 AI & Predictive Engines", count: 2 },
-            { id: "farmer", label: hi ? "👨‍🌾 किसान-प्रथम डिजिटल ढाँचा" : "👨‍🌾 Farmer-First DPI", count: 2 },
+            { id: "farmer", label: hi ? "👨‍🌾 किसान-प्रथम डिजिटल ढाँचा" : "👨‍🌾 Farmer-First DPI", count: 3 },
             { id: "trade", label: hi ? "🏪 व्यापार एवं वित्तीय सत्यनिष्ठा" : "🏪 Trade & Financial Integrity", count: 2 },
           ].map((cat) => (
             <button
@@ -758,6 +786,11 @@ export function LandingPage() {
                     dim: hi ? "प्रतीक्षा समय" : "Gate Wait Times",
                     old: hi ? "12 से 18 घंटे सड़क पर रात भर ट्रैक्टर लाइन" : "12–18 hours overnight queue on highway shoulders",
                     innov: hi ? "30 मिनट का गारंटीड स्लॉट व लाइव वर्चुअल कतार (69% कमी)" : "Guaranteed 30-minute window & live mobile virtual queue",
+                  },
+                  {
+                    dim: hi ? "छूटे स्लॉट का रेस्क्यू" : "Smart Slot Rescue",
+                    old: hi ? "रद्द या छूटे स्लॉट बेकार चले जाते हैं; कतार के किसानों को कोई लाभ नहीं" : "Cancelled slots wasted; scales idle while farmers wait on roads",
+                    innov: hi ? "⚡ स्मार्ट स्लॉट रेस्क्यू: रद्द स्लॉट तत्काल नजदीकी वेटलिस्ट को 1-क्लिक बुकिंग के साथ लाइव ऑफर" : "⚡ Real-Time Slot Rescue: Vacant slots offered instantly to waitlist with 1-click atomic booking",
                   },
                   {
                     dim: hi ? "फसल बिक्री" : "Produce Selling",
