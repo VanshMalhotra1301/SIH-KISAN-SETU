@@ -389,3 +389,34 @@ export interface MandiBuyerWithBid {
   bid?: Bid | undefined;
 }
 
+export interface SlotVacancy {
+  id: string;
+  slotId?: string | null;
+  centreId: string;
+  centreName: string;
+  centreNameHi?: string | null;
+  slotDate: string;
+  slotWindow: string;
+  crop: string;
+  cropHi?: string | null;
+  quantityQuintals: number;
+  status: "open" | "claimed" | "expired" | "cancelled";
+  releasedBy?: string | null;
+  claimedBy?: string | null;
+  claimedAt?: string | null;
+  expiresAt: string;
+  cancellationReason?: string | null;
+  createdAt: string;
+  distanceKm?: number;
+}
+
+export interface SlotRescueOffer {
+  id: string;
+  vacancyId: string;
+  farmerId: string;
+  distanceKm: number;
+  status: "offered" | "viewed" | "claimed" | "claimed_by_other" | "expired";
+  offeredAt: string;
+  claimedAt?: string | null;
+  vacancy?: SlotVacancy;
+}

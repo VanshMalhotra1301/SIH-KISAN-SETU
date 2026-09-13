@@ -34,6 +34,7 @@ import {
   procurementService,
   queueService,
   recommendationService,
+  slotRescueService,
   slotService,
 } from "./services";
 import { supabase } from "@/lib/supabase/client";
@@ -60,6 +61,7 @@ import type {
   QueueRow,
   QueueTicket,
   SlotSuggestion,
+  SlotVacancy,
   ThroughputPoint,
   TimelineStep,
   WaitAnalyticsPoint,
@@ -99,6 +101,9 @@ interface KisanState {
   availableSlots: SlotSuggestion[];
   recentTickets: QueueRow[];
   smartRecommendations: RecommendationEngineResult | null;
+  /** Slot Rescue State */
+  activeRescueOffer: SlotVacancy | null;
+  openVacancies: SlotVacancy[];
   isLoading: boolean;
   error: string | null;
 }
@@ -122,6 +127,11 @@ interface KisanActions {
   refreshIntelligence: () => Promise<void>;
   refreshBiddingWindows: () => Promise<void>;
   refreshRecommendations: () => Promise<void>;
+  /** Slot Rescue Actions */
+  claimRescueOffer: (vacancyId: string) => Promise<{ success: boolean; token?: string | undefined; ticketId?: string | undefined; error?: string | undefined }>;
+  cancelCurrentSlot: (reason: string) => Promise<boolean>;
+  dismissRescueOffer: () => void;
+  refreshRescueOffers: () => Promise<void>;
 }
 
 interface KisanContextValue extends KisanState, KisanActions {
@@ -155,6 +165,8 @@ const emptyState: KisanState = {
   availableSlots: [],
   recentTickets: [],
   smartRecommendations: null,
+  activeRescueOffer: null,
+  openVacancies: [],
   isLoading: true,
   error: null,
 };
@@ -183,7 +195,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
         : Promise.resolve([]);
 
       if (role === "farmer") {
-        // FARMER: profile, centres (for booking), slot, ticket, timeline, payment, notifications
+        // FARMER: profile, centres (for booking), slot, ticket, timeline, payment, notifications, rescue
         const results = await Promise.allSettled([
           farmerService.getProfile(activeUserId),           // 0
           centreService.list(),                              // 1
@@ -194,6 +206,8 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           notificationsP,                                    // 6
           slotService.listAllAvailable(),                    // 7
           queueService.getAllQueue(),                        // 8
+          activeUserId ? slotRescueService.getActiveOfferForFarmer(activeUserId) : Promise.resolve(null), // 9
+          slotRescueService.getActiveVacancies(),            // 10
         ]);
 
         const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
@@ -210,6 +224,8 @@ export function KisanProvider({ children }: { children: ReactNode }) {
           notifications: val(results[6], s.notifications),
           availableSlots: val(results[7], s.availableSlots),
           recentTickets: val(results[8], s.recentTickets),
+          activeRescueOffer: val(results[9], s.activeRescueOffer),
+          openVacancies: val(results[10], s.openVacancies),
           isLoading: false,
           error: null,
         }));
@@ -567,6 +583,50 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       });
     }
 
+    // Slot Rescue Realtime Handlers (Farmer-relevant)
+    if (role === "farmer" && user.id) {
+      // 1. Listen for new offers dispatched to this farmer
+      channelBuilder.on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "slot_rescue_recipients",
+        filter: `farmer_id=eq.${user.id}`,
+      }, (payload: any) => {
+        if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+          slotRescueService.getActiveOfferForFarmer(user.id).then((activeRescueOffer) => {
+            setState((s) => ({ ...s, activeRescueOffer }));
+          }).catch(() => {});
+        }
+      });
+
+      // 2. Listen on all slot vacancies updates (status change, claimed, expired)
+      channelBuilder.on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "slot_vacancies",
+      }, (payload: any) => {
+        slotRescueService.getActiveVacancies().then((openVacancies) => {
+          setState((s) => ({ ...s, openVacancies }));
+        }).catch(() => {});
+
+        // If currently displayed offer was claimed or expired, update or clear it
+        if (payload.eventType === "UPDATE" && payload.new) {
+          const updated = payload.new;
+          if (updated.status !== "open") {
+            setState((s) => {
+              if (s.activeRescueOffer?.id === updated.id) {
+                if (updated.claimed_by === user.id) {
+                  return s;
+                }
+                return { ...s, activeRescueOffer: null };
+              }
+              return s;
+            });
+          }
+        }
+      });
+    }
+
     channelBuilder.subscribe();
 
     return () => {
@@ -723,6 +783,70 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // ─── Slot Rescue Actions ───
+
+  const cancelCurrentSlot = useCallback(async (reason: string): Promise<boolean> => {
+    if (!state.ticket?.id || !user?.id) return false;
+    try {
+      const res = await slotRescueService.cancelAndReleaseSlot({
+        ticketId: state.ticket.id,
+        cancelledBy: user.id,
+        reason: reason || "Farmer requested cancellation",
+      });
+      if (res.success) {
+        setState((s) => ({ ...s, ticket: null }));
+        await refreshFromDatabase();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Failed to cancel slot:", err);
+      throw err;
+    }
+  }, [state.ticket?.id, user?.id, refreshFromDatabase]);
+
+  const claimRescueOffer = useCallback(async (vacancyId: string) => {
+    if (!user?.id) {
+      return { success: false, error: "Not authenticated" };
+    }
+    try {
+      const res = await slotRescueService.claimRescuedSlot({
+        vacancyId,
+        farmerId: user.id,
+      });
+      if (res.success) {
+        setState((s) => ({ ...s, activeRescueOffer: null }));
+        await refreshFromDatabase();
+        return { success: true, token: res.token, ticketId: res.ticketId };
+      } else {
+        if (res.errorCode === "ALREADY_CLAIMED" || res.errorCode === "EXPIRED") {
+          setState((s) => ({ ...s, activeRescueOffer: null }));
+        }
+        return { success: false, error: res.message || "Failed to claim slot" };
+      }
+    } catch (err: any) {
+      console.error("Claim rescue error:", err);
+      return { success: false, error: err.message || "Claim failed" };
+    }
+  }, [user?.id, refreshFromDatabase]);
+
+  const dismissRescueOffer = useCallback(() => {
+    setState((s) => ({ ...s, activeRescueOffer: null }));
+  }, []);
+
+  const refreshRescueOffers = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [offer, vacancies] = await Promise.all([
+        slotRescueService.getActiveOfferForFarmer(user.id),
+        slotRescueService.getActiveVacancies(),
+      ]);
+      setState((s) => ({ ...s, activeRescueOffer: offer, openVacancies: vacancies }));
+    } catch (err) {
+      console.warn("Failed to refresh rescue offers:", err);
+    }
+  }, [user?.id]);
+
   // ─── Computed values ───
 
   const value = useMemo<KisanContextValue>(() => {
@@ -787,6 +911,10 @@ export function KisanProvider({ children }: { children: ReactNode }) {
       sendNotification,
       refreshBiddingWindows,
       refreshRecommendations,
+      claimRescueOffer,
+      cancelCurrentSlot,
+      dismissRescueOffer,
+      refreshRescueOffers,
       summary,
       centreById: (id: string) => centres.find((c) => c.id === id || c.code === id),
       recommendedCentre: centres.find((c) => c.recommended),
@@ -797,6 +925,7 @@ export function KisanProvider({ children }: { children: ReactNode }) {
     refreshFromDatabase, refreshCentres, refreshQueue, refreshIntelligence, refreshBiddingWindows,
     refreshRecommendations, updateFarmerProfile, operatorProcessTicket, operatorUpdateCounters,
     markNotificationRead, markAllNotificationsRead, deleteNotification, sendNotification,
+    claimRescueOffer, cancelCurrentSlot, dismissRescueOffer, refreshRescueOffers,
   ]);
 
   return <KisanContext.Provider value={value}>{children}</KisanContext.Provider>;

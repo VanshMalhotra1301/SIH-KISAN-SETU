@@ -35,6 +35,8 @@ import type {
   Buyer,
   DealMessage,
   MandiBuyerWithBid,
+  SlotVacancy,
+  SlotRescueOffer,
 } from "./types";
 
 // ─── MSP Rate Configuration ───
@@ -499,7 +501,7 @@ export const queueService = {
       .from("queue_tickets")
       .select("*")
       .eq("farmer_id", farmerId)
-      .not("stage", "eq", "done")
+      .not("stage", "in", '("done","rejected","cancelled")')
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -2198,3 +2200,153 @@ export const biddingService = {
     return data as string;
   },
 };
+
+// ─── Procurement Slot Rescue Service ───
+
+export const slotRescueService = {
+  /** Cancel an existing slot booking and immediately release it to the rescue pool */
+  cancelAndReleaseSlot: async (params: {
+    ticketId: string;
+    cancelledBy: string;
+    reason: string;
+  }): Promise<{ success: boolean; vacancyId?: string; error?: string }> => {
+    const { data, error } = await supabase.rpc("cancel_procurement_slot", {
+      p_ticket_id: params.ticketId,
+      p_cancelled_by: params.cancelledBy,
+      p_reason: params.reason || "Farmer requested cancellation",
+    });
+
+    if (error) throw new Error(`Cancellation failed: ${error.message}`);
+    return {
+      success: data.success,
+      vacancyId: data.rescue?.vacancy_id,
+      error: data.message,
+    };
+  },
+
+  /** Claim an open rescued slot (Atomic, first-confirmed wins via FOR UPDATE lock) */
+  claimRescuedSlot: async (params: {
+    vacancyId: string;
+    farmerId: string;
+  }): Promise<{
+    success: boolean;
+    ticketId?: string;
+    token?: string;
+    centreName?: string;
+    slotWindow?: string;
+    errorCode?: string;
+    message?: string;
+  }> => {
+    const { data, error } = await supabase.rpc("claim_slot_rescue", {
+      p_vacancy_id: params.vacancyId,
+      p_farmer_id: params.farmerId,
+    });
+
+    if (error) throw new Error(`Slot claim failed: ${error.message}`);
+    return {
+      success: data.success,
+      ticketId: data.ticket_id,
+      token: data.token,
+      centreName: data.centre_name,
+      slotWindow: data.slot_window,
+      errorCode: data.error_code,
+      message: data.message,
+    };
+  },
+
+  /** Get active open slot vacancies */
+  getActiveVacancies: async (): Promise<SlotVacancy[]> => {
+    const { data, error } = await supabase
+      .from("slot_vacancies")
+      .select("*")
+      .eq("status", "open")
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.warn("Failed to fetch active vacancies:", error.message);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      slotId: row.slot_id,
+      centreId: row.centre_id,
+      centreName: row.centre_name,
+      centreNameHi: row.centre_name_hi,
+      slotDate: row.slot_date,
+      slotWindow: row.slot_window,
+      crop: row.crop,
+      cropHi: row.crop_hi,
+      quantityQuintals: Number(row.quantity_quintals) || 100,
+      status: row.status,
+      releasedBy: row.released_by,
+      claimedBy: row.claimed_by,
+      claimedAt: row.claimed_at,
+      expiresAt: row.expires_at,
+      cancellationReason: row.cancellation_reason,
+      createdAt: row.created_at,
+    }));
+  },
+
+  /** Get active rescue offer for a specific farmer */
+  getActiveOfferForFarmer: async (farmerId: string): Promise<SlotVacancy | null> => {
+    if (!farmerId) return null;
+    const { data, error } = await supabase
+      .from("slot_rescue_recipients")
+      .select(`
+        *,
+        vacancy:slot_vacancies(*)
+      `)
+      .eq("farmer_id", farmerId)
+      .eq("status", "offered")
+      .order("offered_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data || !data.vacancy) return null;
+    const row = data.vacancy;
+    if (row.status !== "open" || new Date(row.expires_at) <= new Date()) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      slotId: row.slot_id,
+      centreId: row.centre_id,
+      centreName: row.centre_name,
+      centreNameHi: row.centre_name_hi,
+      slotDate: row.slot_date,
+      slotWindow: row.slot_window,
+      crop: row.crop,
+      cropHi: row.crop_hi,
+      quantityQuintals: Number(row.quantity_quintals) || 100,
+      status: row.status,
+      releasedBy: row.released_by,
+      claimedBy: row.claimed_by,
+      claimedAt: row.claimed_at,
+      expiresAt: row.expires_at,
+      cancellationReason: row.cancellation_reason,
+      createdAt: row.created_at,
+      distanceKm: Number(data.distance_km) || 10,
+    };
+  },
+
+  /** Trigger a demo rescue vacancy (for testing / evaluator simulation) */
+  triggerDemoVacancy: async (centreId: string, releasedBy?: string): Promise<string> => {
+    const { data, error } = await supabase.rpc("create_slot_rescue_vacancy", {
+      p_centre_id: centreId,
+      p_slot_id: null,
+      p_slot_window: "11:30 – 12:15",
+      p_slot_date: "Today",
+      p_crop: "Wheat",
+      p_crop_hi: "गेहूँ",
+      p_quantity_quintals: 100,
+      p_released_by: releasedBy || null,
+      p_reason: "Demonstration / Fast Slot Rescue Trigger",
+    });
+    if (error) throw new Error(`Demo vacancy creation failed: ${error.message}`);
+    return data.vacancy_id;
+  },
+};
+
