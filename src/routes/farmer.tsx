@@ -984,6 +984,98 @@ export function FarmerPortal() {
             </div>
           )}
 
+          {/* Platform Innovations Highlights Card */}
+          <section className="surface-lift p-5 rounded-2xl border-2 border-leaf/30 space-y-4 relative overflow-hidden shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-7 items-center justify-center rounded-xl bg-leaf text-white font-black text-xs shadow-xs">
+                  ✨
+                </span>
+                <div>
+                  <h3 className="font-display text-sm font-extrabold text-navy flex items-center gap-2">
+                    <span>{hi ? "किसान सेतु के प्रमुख नवाचार (आपके लिए सक्रिय)" : "Kisan Setu Innovations at Work For You"}</span>
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {hi ? "पारंपरिक अव्यवस्था व कतारों को समाप्त कर fair, fast & guaranteed खरीद प्रक्रिया।" : "Active engineering highlights delivering fair MSP, zero gate queues, and 100% auditable DBT."}
+                  </p>
+                </div>
+              </div>
+              <span className="self-start rounded-full bg-leaf-soft border border-leaf/30 px-3 py-1 text-[10px] font-black uppercase text-leaf tracking-wider">
+                ✓ {hi ? "सत्यापित लाइव सिस्टम" : "Verified Live DPI"}
+              </span>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <button
+                type="button"
+                onClick={() => setActiveTab("centres")}
+                className="rounded-xl bg-card p-3.5 border border-border/80 hover:border-leaf hover:shadow-xs transition-all text-left space-y-1.5 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-base">🧠</span>
+                  <span className="text-[9px] font-bold text-leaf uppercase tracking-wider group-hover:underline">{hi ? "देखें →" : "Explore →"}</span>
+                </div>
+                <h4 className="font-display text-xs font-bold text-navy group-hover:text-leaf transition-colors">
+                  {hi ? "5-कारकीय स्मार्ट मंडी चयन" : "Smart Recommender"}
+                </h4>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  {hi ? "दूरी, कतार और खाली कांटों के आधार पर सबसे तेज़ मंडी का चयन।" : "Auto-routes you to the fastest-moving mandi using live scale velocity."}
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("queue")}
+                className="rounded-xl bg-card p-3.5 border border-border/80 hover:border-navy hover:shadow-xs transition-all text-left space-y-1.5 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-base">🎫</span>
+                  <span className="text-[9px] font-bold text-navy uppercase tracking-wider group-hover:underline">{hi ? "देखें →" : "Explore →"}</span>
+                </div>
+                <h4 className="font-display text-xs font-bold text-navy group-hover:text-leaf transition-colors">
+                  {hi ? "लाइव वर्चुअल कतार" : "Live Virtual Queue"}
+                </h4>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  {hi ? "घर से ही लाइव टोकन व ट्रैक्टर उलटी गिनती—सड़क पर इंतज़ार नहीं।" : "Track live tractors ahead and gate ETA from home—zero highway stalls."}
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("bids")}
+                className="rounded-xl bg-card p-3.5 border border-border/80 hover:border-saffron hover:shadow-xs transition-all text-left space-y-1.5 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-base">🏪</span>
+                  <span className="text-[9px] font-bold text-saffron-dark uppercase tracking-wider group-hover:underline">{hi ? "देखें →" : "Explore →"}</span>
+                </div>
+                <h4 className="font-display text-xs font-bold text-navy group-hover:text-leaf transition-colors">
+                  {hi ? "सीधा संस्थागत बाज़ार" : "Direct B2B Deals"}
+                </h4>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  {hi ? "मिलों व व्यापारियों से बिना बिचौलियों के MSP से अधिक बोली।" : "Receive transparent bids on your lot from verified institutional buyers."}
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("payments")}
+                className="rounded-xl bg-card p-3.5 border border-border/80 hover:border-emerald-600 hover:shadow-xs transition-all text-left space-y-1.5 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-base">💰</span>
+                  <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider group-hover:underline">{hi ? "देखें →" : "Explore →"}</span>
+                </div>
+                <h4 className="font-display text-xs font-bold text-navy group-hover:text-leaf transition-colors">
+                  {hi ? "48 घंटे डीबीटी बैंक क्रेडिट" : "48h PFMS Direct Credit"}
+                </h4>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  {hi ? "कांटे की रसीद के बाद सीधे बैंक खाते में भुगतान, शून्य कमीशन।" : "100% PFMS direct benefit transfer with automated SLA tracking."}
+                </p>
+              </button>
+            </div>
+          </section>
+
           {/* AI Sahayak Voice Companion Card */}
           <VoiceAssistant currentTab={activeTab} onNavigateTab={(tab) => setActiveTab(tab as FarmerTab)} onExecuteAction={handleSahayakAction} />
 
