@@ -41,23 +41,20 @@ interface InnovationItem {
   category: "ai" | "farmer" | "trade";
   number: string;
   badge: string;
+  badgeHi: string;
   badgeColor: string;
   icon: string;
   title: string;
   titleHi: string;
   subtitle: string;
   subtitleHi: string;
-  description: string;
-  descriptionHi: string;
-  metric: string;
-  metricLabel: string;
-  metricLabelHi: string;
-  highlights: string[];
-  highlightsHi: string[];
+  highlightChip: string;
+  highlightChipHi: string;
+  points: string[];
+  pointsHi: string[];
   route: string;
   actionLabel: string;
   actionLabelHi: string;
-  tag: string;
 }
 
 const INNOVATION_ITEMS: InnovationItem[] = [
@@ -65,199 +62,169 @@ const INNOVATION_ITEMS: InnovationItem[] = [
     id: "recommender",
     category: "ai",
     number: "01",
-    badge: "Multi-Objective AI Engine",
-    badgeColor: "bg-leaf text-white border-leaf",
+    badge: "Smart Match",
+    badgeHi: "स्मार्ट चयन",
+    badgeColor: "bg-leaf/10 text-leaf border-leaf/30",
     icon: "🧠",
-    title: "Dynamic Multi-Objective Mandi & Slot Allocation",
-    titleHi: "गतिशील बहु-उद्देश्यीय मंडी एवं समय स्लॉट आवंटन",
-    subtitle: "Real-time 5-Factor Optimization for Zero Gate Congestion",
-    subtitleHi: "कतार रहित खरीद के लिए 5-कारकीय वास्तविक समय अनुकूलन",
-    description:
-      "Unlike static portals assigning arbitrary mandis, Kisan Setu continuously evaluates Distance, Live Queue Load, Available Yard Capacity, Open Slots, and Congestion Risk to assign the lowest-wait centre.",
-    descriptionHi:
-      "पारंपरिक पोर्टलों के विपरीत, किसान सेतु दूरी, कतार, यार्ड क्षमता, उपलब्ध स्लॉट और भीड़ जोखिम का वास्तविक समय मूल्यांकन कर न्यूनतम प्रतीक्षा वाली मंडी आवंटित करता है।",
-    metric: "69% Wait Reduction",
-    metricLabel: "Average waiting drop across 5 Karnal centres",
-    metricLabelHi: "करनाल के 5 खरीद केंद्रों में औसत प्रतीक्षा समय में भारी कमी",
-    highlights: [
-      "Dynamic load balancing between Nilokheri and Taraori yards",
-      "Calculates dynamic EffectiveServiceRate from live weighbridge slips",
-      "Direct 1-click arrival window reservation (Morning/Midday/Afternoon)",
+    title: "Smart Mandi Selection",
+    titleHi: "स्मार्ट मंडी चयन",
+    subtitle: "Always pick the fastest, nearest mandi with least waiting.",
+    subtitleHi: "न्यूनतम इंतज़ार और सबसे नजदीकी मंडी का स्वतः चयन।",
+    highlightChip: "⚡ 69% Less Waiting Time",
+    highlightChipHi: "⚡ 69% कम प्रतीक्षा समय",
+    points: [
+      "Nearest mandi with zero crowd",
+      "Guaranteed 30-minute arrival slot",
+      "Prevents road & highway traffic jams",
     ],
-    highlightsHi: [
-      "निलोखेड़ी और तरावड़ी मंडियों के बीच स्वतः लोड संतुलन",
-      "लाइव तुलाई रसीदों से वास्तविक सेवा दर (Service Rate) की गणना",
-      "सीधे 1-क्लिक में 30 मिनट के सुरक्षित समय स्लॉट का आरक्षण",
+    pointsHi: [
+      "बिना भीड़ वाली सबसे नजदीकी मंडी",
+      "30 मिनट का निश्चित समय स्लॉट",
+      "सड़क और गेट पर जाम से मुक्ति",
     ],
     route: "/farmer",
-    actionLabel: "Experience in Farmer Portal →",
-    actionLabelHi: "किसान पोर्टल में अनुभव करें →",
-    tag: "LIVE ALGORITHM",
+    actionLabel: "Try Mandi Recommender →",
+    actionLabelHi: "मंडी चयन देखें →",
   },
   {
     id: "queue",
     category: "farmer",
     number: "02",
-    badge: "Zero-Queue DPI",
-    badgeColor: "bg-navy text-white border-navy",
+    badge: "Virtual Queue",
+    badgeHi: "वर्चुअल कतार",
+    badgeColor: "bg-navy/10 text-navy border-navy/30",
     icon: "🎫",
-    title: "Live Virtual Queue & Cryptographic Digital Gate Pass",
-    titleHi: "लाइव वर्चुअल कतार एवं डिजिटल क्यूआर गेट पास",
-    subtitle: "From 18-Hour Highway Stalls to Guaranteed 30-Min Windows",
-    subtitleHi: "18 घंटे की सड़क कतार से मुक्ति, 30 मिनट का निश्चित समय",
-    description:
-      "Eliminates highway choke points and overnight tractor queues with real-time digital tokens, dynamic ETA countdowns, and instant weighbridge lane dispatch.",
-    descriptionHi:
-      "सड़क पर ट्रैक्टरों के रात भर खड़े रहने की समस्या को समाप्त कर, डिजिटल टोकन, लाइव उलटी गिनती और सीधे धर्मकांटा काउंटर आवंटन प्रदान करता है।",
-    metric: "0 Overnight Stalls",
-    metricLabel: "Tractors arrive strictly during their booked slot",
-    metricLabelHi: "किसान केवल अपने निर्धारित समय पर ही मंडी पहुँचते हैं",
-    highlights: [
-      "Real-time countdown of vehicles ahead updated every 5 seconds",
-      "Tamper-proof QR gate entry pass with automated gate scanner",
-      "Instant SMS and app advisory when weighbridge scale opens",
+    title: "Live Virtual Queue",
+    titleHi: "लाइव वर्चुअल कतार",
+    subtitle: "Track your turn from home with a live mobile token.",
+    subtitleHi: "घर बैठे मोबाइल टोकन से अपनी बारी व समय देखें।",
+    highlightChip: "⏱️ Zero Overnight Road Lines",
+    highlightChipHi: "⏱️ सड़क पर रात भर कतार से मुक्ति",
+    points: [
+      "Live vehicle countdown on phone",
+      "Digital QR pass for instant entry",
+      "Alert sent when your scale is ready",
     ],
-    highlightsHi: [
-      "आगे खड़े वाहनों की संख्या का हर 5 सेकंड में लाइव अपडेट",
-      "गेट पर त्वरित प्रवेश के लिए छेड़छाड़-मुक्त डिजिटल क्यूआर पास",
-      "तुलाई कांटा खाली होते ही एसएमएस एवं ऐप पर सूचना",
+    pointsHi: [
+      "आगे खड़े ट्रैक्टरों की लाइव उलटी गिनती",
+      "गेट पर त्वरित प्रवेश हेतु डिजिटल क्यूआर पास",
+      "कांटा खाली होते ही मोबाइल पर संदेश",
     ],
     route: "/farmer",
-    actionLabel: "View Virtual Queue & Token →",
-    actionLabelHi: "वर्चुअल कतार एवं टोकन देखें →",
-    tag: "FARMER-FIRST",
+    actionLabel: "View Live Queue →",
+    actionLabelHi: "लाइव कतार देखें →",
   },
   {
     id: "buyer",
     category: "trade",
     number: "03",
-    badge: "Direct B2B Marketplace",
-    badgeColor: "bg-amber-600 text-white border-amber-600",
+    badge: "B2B Market",
+    badgeHi: "सीधा व्यापार",
+    badgeColor: "bg-amber-500/10 text-amber-700 border-amber-500/30",
     icon: "🏪",
-    title: "Institutional Buyer Marketplace & Real-Time Lot Bidding",
-    titleHi: "संस्थागत खरीदार बाज़ार एवं लाइव लॉट नीलामी",
-    subtitle: "Connecting Processors & Exporters Directly to Farmer Harvests",
-    subtitleHi: "मिलों एवं निर्यातकों को सीधे किसान की फसल से जोड़ना",
-    description:
-      "Bypasses opaque intermediary trading rings. Verified institutional buyers, millers, and cooperatives place transparent bids on active mandi lots with instant deal confirmations.",
-    descriptionHi:
-      "बिचौलियों के गठजोड़ को समाप्त कर, सत्यापित आटा मिलें, निर्यातक और संस्थागत खरीदार किसान की फसल लॉट पर पारदर्शी बोली लगाते हैं।",
-    metric: "₹180-240 / Qtl",
-    metricLabel: "Premium realized over standard MSP threshold",
-    metricLabelHi: "न्यूनतम समर्थन मूल्य (MSP) से अधिक प्राप्त अतिरिक्त लाभ",
-    highlights: [
-      "Real-time sound and visual chime when new farmer lots are listed",
-      "Interactive Deal Room for instant farmer-buyer negotiation",
-      "Certified quality grading certificates attached to every lot",
+    title: "Direct Buyer Bidding",
+    titleHi: "सीधा खरीदार बाज़ार",
+    subtitle: "Verified flour mills bid directly on your harvest lot above MSP.",
+    subtitleHi: "आटा मिलें व निर्यातक सीधे आपकी फसल पर बेहतर बोली लगाते हैं।",
+    highlightChip: "💰 Fair Price Above MSP",
+    highlightChipHi: "💰 MSP से अधिक बेहतर मूल्य",
+    points: [
+      "Zero middlemen or hidden commission cuts",
+      "Real-time lot bids & deal alerts",
+      "Instant digital trade confirmation slip",
     ],
-    highlightsHi: [
-      "नई फसल आते ही खरीदारों को तुरंत ऑडियो-विज़ुअल अलर्ट",
-      "सीधे मोलभाव के लिए समर्पित डिजिटल सौदा रूम",
-      "प्रत्येक लॉट के साथ प्रमाणित नमी एवं गुणवत्ता प्रमाणपत्र संलग्न",
+    pointsHi: [
+      "बिचौलियों और आढ़तियों की कटौती बंद",
+      "लाइव बोली व तुरंत सौदा सूचना",
+      "पारदर्शी डिजिटल खरीद रसीद",
     ],
     route: "/buyer",
-    actionLabel: "Open Buyer Marketplace →",
-    actionLabelHi: "संस्थागत खरीदार पोर्टल खोलें →",
-    tag: "TRADE REVOLUTION",
+    actionLabel: "Open Marketplace →",
+    actionLabelHi: "खरीदार बाज़ार खोलें →",
   },
   {
     id: "sahayak",
     category: "farmer",
     number: "04",
-    badge: "Multilingual Voice AI",
-    badgeColor: "bg-sky-600 text-white border-sky-600",
+    badge: "Voice AI",
+    badgeHi: "वॉयस एआई",
+    badgeColor: "bg-sky-500/10 text-sky-700 border-sky-500/30",
     icon: "🎙️",
-    title: "Kisan Sahayak: Voice-First Conversational Intelligence",
-    titleHi: "किसान सहायक: बहुभाषी वॉयस-प्रथम एआई साथी",
-    subtitle: "Zero-Tech Barrier Interface for Rural Farmers",
-    subtitleHi: "ग्रामीण किसानों के लिए सरल, बिना टाइपिंग वॉयस तकनीक",
-    description:
-      "No complex app learning required. Farmers speak naturally in Hindi, English, or Hinglish to check their token number, waiting time, weighment slips, and bank transfer dates.",
-    descriptionHi:
-      "किसी जटिल ऐप सीखने की आवश्यकता नहीं। किसान अपनी भाषा (हिंदी, अंग्रेजी, हिंग्लिश) में बोलकर अपना टोकन, नंबर, प्रतीक्षा समय और भुगतान जान सकते हैं।",
-    metric: "3 Native Dialects",
-    metricLabel: "Hindi, English & colloquial Hinglish voice queries",
-    metricLabelHi: "हिंदी, अंग्रेजी और आम बोलचाल की हिंग्लिश में पूर्ण संवाद",
-    highlights: [
-      "Grounded 100% in real-time Supabase procurement database records",
-      "One-click quick voice audio questions with native voice responses",
-      "Direct action dispatch (opens queue or downloads pass on command)",
+    title: "AI Voice Sahayak",
+    titleHi: "एआई वॉयस सहायक",
+    subtitle: "Ask questions in Hindi or English without typing.",
+    subtitleHi: "बिना टाइप किए हिंदी या अंग्रेजी में बोलकर पूछें।",
+    highlightChip: "🗣️ Speaks Hindi, English & Hinglish",
+    highlightChipHi: "🗣️ हिंदी व अंग्रेजी में बोलकर उत्तर",
+    points: [
+      "No typing or complex apps needed",
+      "Real-time answers from live records",
+      "Checks token, weight & bank status",
     ],
-    highlightsHi: [
-      "लाइव डेटाबेस से 100% प्रमाणित एवं सटीक उत्तर",
-      "एक टैप में बोलकर सवाल पूछें और अपनी भाषा में आवाज़ सुनें",
-      "बोलने पर स्वतः पास खोलना या कतार स्क्रीन पर ले जाना",
+    pointsHi: [
+      "टाइपिंग की कोई जरूरत नहीं",
+      "सीधे लाइव रिकॉर्ड से सही जानकारी",
+      "टोकन, वजन व भुगतान की तुरंत स्थिति",
     ],
     route: "/farmer",
-    actionLabel: "Try Sahayak Voice Companion →",
-    actionLabelHi: "किसान सहायक वॉयस आज़माएं →",
-    tag: "INCLUSIVE AI",
+    actionLabel: "Ask Sahayak →",
+    actionLabelHi: "सहायक से पूछें →",
   },
   {
     id: "control-tower",
     category: "ai",
     number: "05",
-    badge: "Predictive Governance",
-    badgeColor: "bg-cyan-700 text-white border-cyan-700",
+    badge: "Radar",
+    badgeHi: "कंट्रोल रडार",
+    badgeColor: "bg-cyan-600/10 text-cyan-800 border-cyan-600/30",
     icon: "🛰️",
-    title: "District Command Control Tower with 42-Min Surge Warning",
-    titleHi: "जिला कमांड कंट्रोल टावर (42 मिनट पूर्व भीड़ चेतावनी)",
-    subtitle: "Geospatial Radar & Proactive Highway Congestion Prevention",
-    subtitleHi: "भू-स्थानिक रडार एवं सड़क जाम की पूर्व रोकथाम",
-    description:
-      "Gives District Magistrates and Food & Civil Supplies officers unified aerial surveillance of all operational yards, active counters, and incoming tractor traffic vectors.",
-    descriptionHi:
-      "जिला प्रशासन को सभी मंडियों, चालू कांटों और आने वाले ट्रैक्टरों की लाइव 360-डिग्री निगरानी और भीड़ से 42 मिनट पहले स्वतः चेतावनी देता है।",
-    metric: "42-Min Advance Warning",
-    metricLabel: "Surges detected before road traffic gridlock occurs",
-    metricLabelHi: "सड़क पर जाम लगने से 42 मिनट पहले ही सिस्टम द्वारा चेतावनी",
-    highlights: [
-      "Interactive district GIS map with live yard health dots",
-      "Predictive congestion alerts with automated 1-click slot rebalancing",
-      "Hourly throughput velocity and scale downtime monitoring",
+    title: "District Control Tower",
+    titleHi: "जिला कंट्रोल टावर",
+    subtitle: "Real-time radar warns officials of traffic 42 mins early.",
+    subtitleHi: "सड़क पर जाम लगने से 42 मिनट पहले ही प्रशासन को सूचना।",
+    highlightChip: "🚨 42-Min Advance Warning",
+    highlightChipHi: "🚨 42 मिनट पूर्व भीड़ चेतावनी",
+    points: [
+      "Live district-wide mandi radar map",
+      "Reroutes traffic to empty yards",
+      "Monitors open weighing scales live",
     ],
-    highlightsHi: [
-      "लाइव मंडी स्वास्थ्य स्थिति वाला इंटरएक्टिव जिला नक्शा",
-      "1-क्लिक में भीड़ को खाली मंडी की ओर मोड़ने की सुविधा",
-      "धर्मकांटों की प्रति घंटा गति एवं खराबी की तुरंत सूचना",
+    pointsHi: [
+      "सभी मंडियों का लाइव जिला नक्शा",
+      "ट्रैक्टरों को खाली मंडियों में मोड़ना",
+      "चालू धर्मकांटों की लाइव निगरानी",
     ],
     route: "/control-tower",
-    actionLabel: "Inspect District Control Tower →",
-    actionLabelHi: "जिला कंट्रोल टावर देखें →",
-    tag: "COMMAND SYSTEM",
+    actionLabel: "Open Control Tower →",
+    actionLabelHi: "कंट्रोल टावर देखें →",
   },
   {
     id: "dbt",
     category: "trade",
     number: "06",
-    badge: "Financial Transparency",
-    badgeColor: "bg-emerald-700 text-white border-emerald-700",
-    icon: "💰",
-    title: "100% PFMS Direct Benefit Transfer (DBT) & 48h SLA Audit",
-    titleHi: "100% पीएफएमएस डीबीटी सीधा भुगतान (48 घंटे गारंटी)",
-    subtitle: "End-to-End Certified Tare-to-Bank Integrity",
-    subtitleHi: "कांटे की तुलाई से लेकर सीधे बैंक खाते तक पूर्ण पारदर्शिता",
-    description:
-      "Eliminates paper slip manipulation and delay. Every electronic weighbridge reading, moisture test, and MSP calculation is cryptographically logged and tracked to direct bank transfer.",
-    descriptionHi:
-      "कागजी पर्चियों की धांधली और देरी समाप्त। इलेक्ट्रॉनिक धर्मकांटे का वजन, नमी परीक्षण और एमएसपी गणना सीधे किसान के खाते में पीएफएमएस द्वारा भेजी जाती है।",
-    metric: "100% Auditable",
-    metricLabel: "PFMS transaction IDs with 48-hour credit SLA",
-    metricLabelHi: "48 घंटे में सीधे बैंक खाते में जमा होने की गारंटी",
-    highlights: [
-      "Tamper-evident tare, gross, and net quintal digital weighment records",
-      "Automatic moisture deduction calculation conforming to FCI norms",
-      "Complete SLA countdown with direct grievance escalation on delay",
+    badge: "Direct DBT",
+    badgeHi: "सीधा भुगतान",
+    badgeColor: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30",
+    icon: "💳",
+    title: "48-Hour Bank Transfer",
+    titleHi: "48 घंटे में सीधा बैंक भुगतान",
+    subtitle: "Digital weigh slip triggers 100% PFMS transfer to your account.",
+    subtitleHi: "कांटे पर तुलाई होते ही सीधे बैंक खाते में भुगतान।",
+    highlightChip: "🔒 100% Direct PFMS Transfer",
+    highlightChipHi: "🔒 100% सीधा बैंक खाता क्रेडिट",
+    points: [
+      "Tamper-proof digital weight receipt",
+      "Direct bank credit within 48 hours",
+      "Live PFMS tracking & SLA guarantee",
     ],
-    highlightsHi: [
-      "इलेक्ट्रॉनिक कांटे का खाली व भरा वजन (Gross/Tare) डिजिटल रूप से दर्ज",
-      "एफसीआई मानकों के अनुसार नमी की पारदर्शी व सटीक गणना",
-      "भुगतान में देरी होने पर सीधे उच्चाधिकारियों को शिकायत निवारण",
+    pointsHi: [
+      "धर्मकांटे की डिजिटल पक्की पर्ची",
+      "48 घंटे में सीधे बैंक खाते में जमा",
+      "लाइव पीएफएमएस ट्रैकिंग व गारंटी",
     ],
     route: "/farmer",
-    actionLabel: "Check Payment & DBT Tracking →",
-    actionLabelHi: "डीबीटी भुगतान ट्रैकिंग देखें →",
-    tag: "ZERO LEAKAGE",
+    actionLabel: "Track Payment Status →",
+    actionLabelHi: "भुगतान स्थिति देखें →",
   },
 ];
 
@@ -697,77 +664,55 @@ export function LandingPage() {
         </div>
 
         {/* 6 Innovations Cards Grid */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {filteredInnovations.map((item) => (
             <div
               key={item.id}
-              className="surface-lift p-6 rounded-2xl border-2 border-border/80 hover:border-leaf/50 transition-all duration-200 flex flex-col justify-between group relative overflow-hidden shadow-sm hover:shadow-md"
+              className="surface-lift p-5 sm:p-6 rounded-2xl border border-border/80 hover:border-leaf/50 transition-all duration-200 flex flex-col justify-between group shadow-sm hover:shadow-md relative"
             >
-              <div className="space-y-4">
-                {/* Header row: Number, Badge, Tag */}
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-black text-leaf bg-leaf-soft px-2 py-0.5 rounded-md border border-leaf/20">
-                      #{item.number}
-                    </span>
-                    <span className={cn("rounded-md px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider border shadow-xs", item.badgeColor)}>
-                      {item.badge}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-extrabold text-muted-foreground tracking-widest uppercase">
-                    {item.tag}
+              <div className="space-y-3.5">
+                {/* Header: Number & Clean Badge */}
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-black text-leaf bg-leaf-soft px-2 py-0.5 rounded-md border border-leaf/20">
+                    #{item.number}
+                  </span>
+                  <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider border", item.badgeColor)}>
+                    {hi ? item.badgeHi : item.badge}
                   </span>
                 </div>
 
-                {/* Title & Subtitle */}
+                {/* Title & 1-line plain subtitle */}
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-2xl">{item.icon}</span>
-                    <h3 className="font-display text-lg font-black text-navy group-hover:text-leaf transition-colors leading-snug">
+                    <h3 className="font-display text-base sm:text-lg font-black text-navy group-hover:text-leaf transition-colors leading-snug">
                       {hi ? item.titleHi : item.title}
                     </h3>
                   </div>
-                  <p className="text-xs font-bold text-leaf mt-1">
+                  <p className="text-xs text-muted-foreground mt-1.5 leading-snug">
                     {hi ? item.subtitleHi : item.subtitle}
                   </p>
                 </div>
 
-                {/* Description */}
-                <p className="text-xs text-muted-foreground leading-relaxed font-medium">
-                  {hi ? item.descriptionHi : item.description}
-                </p>
-
-                {/* Key Metric Impact Pill */}
-                <div className="rounded-xl border border-leaf/30 bg-leaf-soft/60 p-3 flex items-center justify-between gap-2">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
-                      {hi ? "प्रमाणित प्रभाव" : "Proven Impact"}
-                    </span>
-                    <span className="text-xs text-navy/80 font-medium">
-                      {hi ? item.metricLabelHi : item.metricLabel}
-                    </span>
-                  </div>
-                  <span className="font-display text-base font-black text-leaf whitespace-nowrap">
-                    {item.metric}
-                  </span>
+                {/* Clean Impact Chip */}
+                <div className="rounded-xl border border-leaf/30 bg-leaf-soft/70 px-3 py-2 text-xs font-black text-navy flex items-center justify-between shadow-2xs">
+                  <span>{hi ? item.highlightChipHi : item.highlightChip}</span>
+                  <span className="text-leaf font-bold">✓</span>
                 </div>
 
-                {/* Engineering Highlights */}
-                <div className="space-y-1.5 pt-1">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground block">
-                    {hi ? "प्रमुख तकनीकी विशेषताएँ:" : "Engineering Highlights:"}
-                  </span>
-                  {(hi ? item.highlightsHi : item.highlights).map((h, hIdx) => (
-                    <div key={hIdx} className="flex items-start gap-2 text-xs font-semibold text-foreground/80">
-                      <span className="text-leaf font-bold shrink-0 mt-0.5">✓</span>
-                      <span className="text-[11px] leading-snug">{h}</span>
-                    </div>
+                {/* 3 Quick & Easy Points */}
+                <ul className="space-y-1.5 text-xs text-foreground/80 font-semibold pt-1">
+                  {(hi ? item.pointsHi : item.points).map((pt, pIdx) => (
+                    <li key={pIdx} className="flex items-center gap-2">
+                      <span className="size-1.5 rounded-full bg-leaf shrink-0" />
+                      <span>{pt}</span>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
 
               {/* Action Button */}
-              <div className="pt-5 mt-auto">
+              <div className="pt-4 mt-auto">
                 <Link
                   to={item.route}
                   className="w-full rounded-xl bg-navy py-2.5 px-4 text-xs font-bold text-primary-foreground group-hover:bg-leaf transition-colors shadow-xs flex items-center justify-center gap-1.5 focus-ring"
